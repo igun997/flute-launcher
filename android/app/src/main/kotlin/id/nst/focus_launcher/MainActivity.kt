@@ -19,12 +19,30 @@ class MainActivity : FlutterActivity() {
     // The engine outlives this activity: the lockscreen shares it.
     override fun shouldDestroyEngineWithHost(): Boolean = false
 
+    /**
+     * Set when another activity (the lockscreen) took the shared engine from this one. The view
+     * is then detached for good: an instance that is only brought back by Home draws nothing,
+     * so [onStart] rebuilds it.
+     */
+    private var evicted = false
+
+    override fun detachFromFlutterEngine() {
+        evicted = true
+        super.detachFromFlutterEngine()
+    }
+
     // While the lockscreen has the engine, this activity must not push lifecycle changes into it:
     // a late "paused" from here would freeze the lock UI (frames stop when the app is paused).
     override fun shouldDispatchAppLifecycleState(): Boolean = FluteSurface.current != FluteSurface.LOCK
 
     override fun onStart() {
         super.onStart()
+        if (evicted) {
+            // A fresh instance attaches to the engine again; its onStart runs after this one stops.
+            evicted = false
+            recreate()
+            return
+        }
         visible.set(true)
         started = WeakReference(this)
     }
