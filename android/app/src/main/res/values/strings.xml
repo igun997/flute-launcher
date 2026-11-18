@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lock_channel_name">Focus lock</string>
+    <string name="lock_notification_title">Focus lock is on</string>
+    <string name="lock_notification_text">Selected apps pause before they open</string>
+    <string name="lock_subtitle">Take a breath before you open this app.</string>
+    <string name="lock_go_back">Go back</string>
+    <string name="lock_open_anyway">Open anyway</string>
+    <string name="accessibility_service_label">Flute double-tap lock</string>
+    <string name="accessibility_service_description">Lets Flute lock the screen when you double-tap its home screen. It only locks the screen: it cannot read or change anything on your screen and receives no accessibility events.</string>
+</resources>

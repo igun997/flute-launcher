@@ -1,0 +1,66 @@
+{
+ "cell": 160,
+ "houseCell": 256,
+ "pets": [
+  {
+   "id": "kiri",
+   "name": "Kiri",
+   "phrases": [
+    "Ribbit!",
+    "Jump jump!",
+    "I love rainy days!",
+    "Croak~"
+   ]
+  },
+  {
+   "id": "luma",
+   "name": "Luma",
+   "phrases": [
+    "Make a wish!",
+    "Sparkle sparkle~",
+    "Stars are out soon!",
+    "Abracadabra!"
+   ]
+  },
+  {
+   "id": "momo",
+   "name": "Momo",
+   "phrases": [
+    "Hop hop!",
+    "Carrots? Carrots!",
+    "Pet my ears~",
+    "Boing!"
+   ]
+  },
+  {
+   "id": "nori",
+   "name": "Nori",
+   "phrases": [
+    "\u2026nap time?",
+    "So sleepy\u2026",
+    "Meow? I mean, hi.",
+    "Five more minutes."
+   ]
+  },
+  {
+   "id": "pip",
+   "name": "Pip",
+   "phrases": [
+    "Quack!",
+    "Puddles are the best!",
+    "Waddle waddle~",
+    "Is it snack time?"
+   ]
+  },
+  {
+   "id": "sora",
+   "name": "Sora",
+   "phrases": [
+    "The sky looks nice!",
+    "Float float~",
+    "Hello hello!",
+    "Cloud watching?"
+   ]
+  }
+ ]
+}

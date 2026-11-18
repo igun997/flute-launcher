@@ -1,0 +1,46 @@
+name: Release
+
+# Push a tag such as v0.2.0 to publish a signed release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: flutter analyze
+      - run: flutter test
+
+      - name: Version from tag
+        id: v
+        run: echo "name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/build-apk
+        id: apk
+        with:
+          build-name: ${{ steps.v.outputs.name }}
+          build-number: ${{ github.run_number }}
+          keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.apk.outputs.apk }}
+          SIGNER: ${{ steps.apk.outputs.signer-sha256 }}
+        run: |
+          pre=""
+          case "$GITHUB_REF_NAME" in *-*) pre="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" "$APK" "$APK.sha256" $pre \
+            --title "Flute ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --notes "Signing certificate SHA-256: \`${SIGNER}\`"

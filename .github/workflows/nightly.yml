@@ -1,0 +1,59 @@
+name: Nightly
+
+# Every push to main is checked, built, signed with the release key and published as the
+# "nightly" pre-release. The release is replaced on each run, so it always holds the latest main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: flutter analyze
+      - run: flutter test
+
+      - name: Version
+        id: v
+        run: |
+          base=$(sed -n 's/^version: \([0-9.]*\).*/\1/p' pubspec.yaml)
+          echo "name=${base}-nightly.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/build-apk
+        id: apk
+        with:
+          build-name: ${{ steps.v.outputs.name }}
+          build-number: ${{ github.run_number }}
+          keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Publish nightly pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.apk.outputs.apk }}
+          SIGNER: ${{ steps.apk.outputs.signer-sha256 }}
+        run: |
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly "$APK" "$APK.sha256" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Nightly ${GITHUB_SHA::7}" \
+            --notes "Automatic build of \`main\` at ${GITHUB_SHA}.
+
+          Signed with the Flute release key. Signing certificate SHA-256:
+          \`${SIGNER}\`
+
+          Nightly builds can be unstable. For a tested build use the latest release."
