@@ -1,5 +1,4 @@
 import '../tools/agent_tool.dart';
-import 'skill.dart';
 import 'skill_manager.dart';
 
 const _maxBodyChars = 64 * 1024;

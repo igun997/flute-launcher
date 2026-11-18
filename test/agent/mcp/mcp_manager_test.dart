@@ -4,8 +4,6 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_launcher/agent/auth/secret_store.dart';
 import 'package:focus_launcher/agent/mcp/mcp_manager.dart';
-import 'package:focus_launcher/agent/mcp/mcp_presets.dart';
-import 'package:focus_launcher/agent/mcp/mcp_server_config.dart';
 import 'package:focus_launcher/agent/tools/agent_tool.dart';
 import 'package:mcp_dart/mcp_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';

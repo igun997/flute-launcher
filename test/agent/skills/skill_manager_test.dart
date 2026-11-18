@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:focus_launcher/agent/skills/skill.dart';
 import 'package:focus_launcher/agent/skills/skill_commands.dart';
 import 'package:focus_launcher/agent/skills/skill_manager.dart';
 import 'package:focus_launcher/agent/tools/agent_tool.dart';

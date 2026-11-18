@@ -1,4 +1,3 @@
-import 'skill.dart';
 import 'skill_manager.dart';
 
 /// Runs `npx skills`-style commands typed in the chat and returns markdown for the reply.
