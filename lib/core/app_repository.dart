@@ -72,13 +72,16 @@ class AppRepository extends ChangeNotifier {
 
   Future<void> _reload() async {
     final installed = await FluteNative.getApps();
+    final categories = await _engine.categorizeAll([
+      for (final a in installed) (package: a.package, label: a.label, androidCategory: a.androidCategory),
+    ]);
     _apps = [
-      for (final a in installed)
+      for (var i = 0; i < installed.length; i++)
         FluteApp(
-          package: a.package,
-          label: a.label,
-          isSystem: a.isSystem,
-          category: _engine.categorize(a.package, a.label, androidCategory: a.androidCategory),
+          package: installed[i].package,
+          label: installed[i].label,
+          isSystem: installed[i].isSystem,
+          category: categories[i],
         ),
     ]..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
     await refreshUsage(notify: false);

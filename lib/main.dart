@@ -1,13 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:rinf/rinf.dart';
 
 import 'app/flute.dart';
 import 'app/theme.dart';
 import 'home/shell.dart';
 import 'lock/lock_screen.dart';
 import 'native/flute_native.dart';
+import 'rust/rust_core.dart';
+import 'src/bindings/bindings.dart';
 import 'widgets/sky_ink.dart';
 
 Future<void> main() async {
@@ -19,6 +23,13 @@ Future<void> main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  try {
+    await initializeRust(assignRustSignal);
+    RustCore.instance.start();
+  } catch (e) {
+    // The launcher works without the Rust side; only the jobs handed to it are unavailable.
+    debugPrint('Rust core did not start (${e.runtimeType}).');
+  }
   runApp(const FluteApp());
 }
 

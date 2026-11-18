@@ -62,4 +62,35 @@ void main() {
       expect(Mode.free.ruleFor(AppCategory.games), Rule.show);
     });
   });
+
+  group('categorizeAll', () {
+    final apps = [
+      (package: 'com.whatsapp', label: 'WhatsApp', androidCategory: -1),
+      (package: 'com.x.y', label: 'Thing', androidCategory: 0),
+      (package: 'id.co.somebank.mobile', label: 'Some Bank', androidCategory: -1),
+      (package: 'com.zzz.qqq', label: 'Zzz', androidCategory: -1),
+    ];
+
+    test('gives the same answers as one app at a time, with or without a batch helper', () async {
+      final plain = CategoryEngine({'com.whatsapp': AppCategory.chat});
+      final one = [for (final a in apps) plain.categorize(a.package, a.label, androidCategory: a.androidCategory)];
+      expect(await plain.categorizeAll(apps), one);
+
+      var asked = <(String, String)>[];
+      final batched = CategoryEngine({'com.whatsapp': AppCategory.chat}, null, (list) async {
+        asked = list;
+        return [0, 255]; // banking rule, no match
+      });
+      expect(await batched.categorizeAll(apps), one);
+      // Only the apps that need guessing are sent; known and Android-categorized ones are not.
+      expect(asked.map((e) => e.$1), ['id.co.somebank.mobile', 'com.zzz.qqq']);
+    });
+
+    test('a failing or mismatched batch helper falls back to the local guess', () async {
+      final broken = CategoryEngine({}, null, (list) async => throw StateError('no rust'));
+      expect((await broken.categorizeAll(apps))[2], AppCategory.banking);
+      final short = CategoryEngine({}, null, (list) async => [0]);
+      expect((await short.categorizeAll(apps))[3], AppCategory.other);
+    });
+  });
 }

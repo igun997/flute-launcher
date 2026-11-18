@@ -192,7 +192,7 @@ void main() {
 
   test('content that declares more than 25 MiB is refused before it is read', () async {
     final archive = Archive()
-      ..addFile(ArchiveFile('repo-main/SKILL.md', 10, utf8.encode(_skillMd('big', 'Big', 'x'))))
+      ..addFile(ArchiveFile.string('repo-main/SKILL.md', _skillMd('big', 'Big', 'x')))
       ..addFile(ArchiveFile('repo-main/data.bin', 26 * 1024 * 1024, Uint8List(26 * 1024 * 1024)));
     final zip = Uint8List.fromList(ZipEncoder().encode(archive));
     final m = SkillManager(root: root, httpClient: _clientServing(() => zip));

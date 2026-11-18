@@ -23,6 +23,7 @@ jobs:
       - uses: ./.github/actions/setup
       - run: flutter analyze
       - run: flutter test
+      - run: cargo test -p hub
 
       - name: Version
         id: v

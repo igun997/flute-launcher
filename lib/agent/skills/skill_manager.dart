@@ -4,19 +4,17 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import 'skill.dart';
+import 'skill_archive_backend.dart';
 
 export 'skill.dart';
 
 const _maxDownloadBytes = 10 * 1024 * 1024;
-const _maxExtractedBytes = 25 * 1024 * 1024;
-const _maxFiles = 1000;
 const _maxFileReadBytes = 64 * 1024;
 const _lockName = 'skills-lock.json';
 const _timeout = Duration(seconds: 60);
@@ -29,10 +27,12 @@ class SkillManager extends ChangeNotifier {
     required Directory root,
     http.Client? httpClient,
     String? Function()? githubToken,
+    SkillArchiveBackend? archives,
   })  : root = root,
         _http = httpClient ?? http.Client(),
         _ownsHttp = httpClient == null,
-        _githubToken = githubToken;
+        _githubToken = githubToken,
+        _archives = archives;
 
   /// `<app support>/skills`.
   static Future<SkillManager> open({http.Client? httpClient}) async {
@@ -47,6 +47,8 @@ class SkillManager extends ChangeNotifier {
   final http.Client _http;
   final bool _ownsHttp;
   final String? Function()? _githubToken;
+  final SkillArchiveBackend? _archives;
+  SkillArchiveBackend get _backend => _archives ?? SkillArchiveBackend.defaultBackend();
 
   final Map<String, _LockEntry> _lock = {};
   final Map<String, Skill> _installed = {};
@@ -182,7 +184,7 @@ class SkillManager extends ChangeNotifier {
           if (x == null) {
             throw SkillException('${entry.key} is no longer in ${entry.value.source}.');
           }
-          if (_hashFiles(_filesUnder(fetched.files, x.dir)) != entry.value.contentHash) {
+          if ((await _hashFiles(_filesUnder(fetched.files, x.dir))) != entry.value.contentHash) {
             outdated.add(entry.key);
           }
         }
@@ -202,7 +204,7 @@ class SkillManager extends ChangeNotifier {
           final fetched = await _fetchFor(entry, cache, resolveCommit: true);
           final x = _loadFound(fetched.files, entry.skillPath, name);
           if (x == null) throw SkillException('$name is no longer in ${entry.source}.');
-          final hash = _hashFiles(_filesUnder(fetched.files, x.dir));
+          final hash = await _hashFiles(_filesUnder(fetched.files, x.dir));
           if (hash == entry.contentHash && Directory('${root.path}/$name').existsSync()) continue;
           updated.add(await _install(x, fetched, name));
         }
@@ -297,7 +299,7 @@ class SkillManager extends ChangeNotifier {
     if (fetched.symlinks.any((l) => x.dir.isEmpty || l == x.dir || l.startsWith('${x.dir}/'))) {
       throw SkillException('${x.name} contains a symbolic link, which is not allowed.');
     }
-    final hash = _hashFiles(files);
+    final hash = await _hashFiles(files);
     final target = Directory('${root.path}/$installName');
     final staging = Directory('${root.path}/.staging-${Uuid().v4()}');
     await staging.create(recursive: true);
@@ -387,7 +389,7 @@ class SkillManager extends ChangeNotifier {
       Uri.parse('https://codeload.github.com/${s.owner}/${s.repo}/zip/$encoded'),
       headers: _authHeaders(),
     );
-    final archive = _decodeZip(bytes);
+    final archive = await _decodeZip(bytes);
     return _Fetched(
       files: archive.files,
       symlinks: archive.symlinks,
@@ -402,7 +404,7 @@ class SkillManager extends ChangeNotifier {
   Future<_Fetched> _fetchDownload(Uri url) async {
     final bytes = await _get(url);
     if (_isZip(bytes)) {
-      final archive = _decodeZip(bytes);
+      final archive = await _decodeZip(bytes);
       return _Fetched.download(url, archive.files, archive.symlinks);
     }
     if (_isGzip(bytes)) {
@@ -481,21 +483,11 @@ class SkillManager extends ChangeNotifier {
 
   // ---- archives ----
 
-  static _Archive _decodeZip(Uint8List bytes) {
-    try {
-      return _collect(ZipDecoder().decodeBytes(bytes).files);
-    } on SkillException {
-      rethrow;
-    } on ArchiveLimitException {
-      throw const SkillException('The extracted content is larger than 25 MiB.');
-    } on Exception {
-      throw const SkillException('The download is not a valid archive.');
-    }
-  }
+  Future<RawArchive> _decodeZip(Uint8List bytes) async => _collect(await _backend.unzip(bytes));
 
-  static _Archive _decodeTar(Uint8List bytes) {
+  static RawArchive _decodeTar(Uint8List bytes) {
     try {
-      return _collect(TarDecoder().decodeBytes(bytes, verify: true).files);
+      return _collect(readArchiveEntries(TarDecoder().decodeBytes(bytes, verify: true).files));
     } on SkillException {
       rethrow;
     } on Exception {
@@ -505,21 +497,21 @@ class SkillManager extends ChangeNotifier {
 
   static Uint8List _gunzip(Uint8List bytes) {
     try {
-      return GZipDecoder().decodeBytes(bytes, maxOutputSize: _maxExtractedBytes);
+      return GZipDecoder().decodeBytes(bytes, maxOutputSize: skillMaxExtractedBytes);
     } on ArchiveLimitException {
-      throw const SkillException('The extracted content is larger than 25 MiB.');
+      throw const SkillException(skillTooLargeMessage);
     } on Exception {
       throw const SkillException('The download is not a valid gzip file.');
     }
   }
 
-  /// Checks names and sizes before reading any content, drops directories, and sets symlinks
-  /// aside. When every entry sits under one top folder (GitHub's `repo-<sha>/`), that folder is removed.
-  static _Archive _collect(List<ArchiveFile> entries) {
-    if (entries.length > _maxFiles) {
+  /// The manager's policy over what a backend unpacked: file count, unsafe names, the single top
+  /// folder (GitHub's `repo-<sha>/`) removed, symlinks set aside, total size. Names are normalised here.
+  static RawArchive _collect(RawArchive raw) {
+    if (raw.files.length + raw.symlinks.length > skillMaxFiles) {
       throw const SkillException('The download has more than 1000 files.');
     }
-    final names = [for (final e in entries) e.name.replaceAll('\\', '/')];
+    final names = [for (final n in [...raw.files.keys, ...raw.symlinks]) n.replaceAll('\\', '/')];
     for (final name in names) {
       if (name.startsWith('/') ||
           name.contains('\u0000') ||
@@ -531,40 +523,30 @@ class SkillManager extends ChangeNotifier {
     final tops = {for (final n in names) n.contains('/') ? n.split('/').first : ''};
     final stripTop = tops.length == 1 && tops.first.isNotEmpty;
 
-    final keep = <String, ArchiveFile>{};
-    final links = <String>{};
-    var declared = 0;
-    for (var i = 0; i < entries.length; i++) {
-      final e = entries[i];
-      var rel = names[i];
-      if (stripTop) {
-        final slash = rel.indexOf('/');
-        rel = slash < 0 ? '' : rel.substring(slash + 1);
-      }
-      if (rel.isEmpty) continue;
-      if (e.isSymbolicLink || e.isHardLink) {
-        links.add(rel);
-        continue;
-      }
-      if (!e.isFile || rel.endsWith('/')) continue;
-      declared += e.size;
-      if (declared > _maxExtractedBytes) {
-        throw const SkillException('The extracted content is larger than 25 MiB.');
-      }
-      keep[rel] = e;
+    String rel(String name) {
+      final n = name.replaceAll('\\', '/');
+      if (!stripTop) return n;
+      final slash = n.indexOf('/');
+      return slash < 0 ? '' : n.substring(slash + 1);
     }
 
     final files = <String, Uint8List>{};
-    var total = 0;
-    for (final entry in keep.entries) {
-      final bytes = entry.value.content;
-      total += bytes.length;
-      if (total > _maxExtractedBytes) {
-        throw const SkillException('The extracted content is larger than 25 MiB.');
-      }
-      files[entry.key] = bytes;
+    for (final e in raw.files.entries) {
+      final r = rel(e.key);
+      if (r.isEmpty || r.endsWith('/')) continue;
+      files[r] = e.value;
     }
-    return _Archive(files, links);
+    final links = <String>{};
+    for (final name in raw.symlinks) {
+      final r = rel(name);
+      if (r.isNotEmpty) links.add(r);
+    }
+    var total = 0;
+    for (final bytes in files.values) {
+      total += bytes.length;
+      if (total > skillMaxExtractedBytes) throw const SkillException(skillTooLargeMessage);
+    }
+    return RawArchive(files, links);
   }
 
   static bool _isZip(Uint8List b) => b.length >= 4 && b[0] == 0x50 && b[1] == 0x4b && b[2] == 0x03 && b[3] == 0x04;
@@ -657,7 +639,7 @@ class SkillManager extends ChangeNotifier {
     };
   }
 
-  static String _hashFiles(Map<String, Uint8List> files) {
+  Future<String> _hashFiles(Map<String, Uint8List> files) async {
     final paths = files.keys.toList()..sort();
     final out = BytesBuilder(copy: false);
     for (final p in paths) {
@@ -668,7 +650,7 @@ class SkillManager extends ChangeNotifier {
       out.addByte(0);
       out.add(content);
     }
-    return sha256.convert(out.takeBytes()).toString();
+    return _backend.sha256(out.takeBytes());
   }
 
   // ---- source parsing ----
@@ -834,12 +816,6 @@ class _Source {
   final List<String> skillNames;
 
   String get display => isGitHub ? '$owner/$repo' : url.toString();
-}
-
-class _Archive {
-  _Archive(this.files, this.symlinks);
-  final Map<String, Uint8List> files;
-  final Set<String> symlinks;
 }
 
 class _Fetched {

@@ -90,6 +90,16 @@ Swipe left on Home for **Inbox**: WhatsApp and SMS notifications (captured from 
 
 <p><img src="docs/screenshots/lockscreen.png" width="32%" alt="Lockscreen"> <img src="docs/screenshots/settings.png" width="32%" alt="Settings"></p>
 
+### Ask Flute: an assistant on the left of Home
+
+Swipe right from Home. Chat with any model, with Markdown answers, attachments (photo, camera, video, files) and tools.
+
+- **Bring your own model:** any OpenAI-compatible gateway (the model list is pulled automatically and searchable), **Sign in with ChatGPT** (uses your ChatGPT plan, through OpenAI's official flow for open-source apps) or **OpenRouter** (OAuth). Claude's own subscription login is not offered: Anthropic does not allow it in third-party apps. Use an API key via a gateway or OpenRouter.
+- **Tools on your phone:** calendar, contacts and notes. **Every change, and every read of personal data, asks you first** (allow once, allow for this chat, deny).
+- **External tools (MCP):** add GitHub, Jira or any Streamable HTTP MCP server in Agent settings. Tool calls that are not read-only ask first.
+- **Skills:** type `skills add owner/repo` in the chat (the same commands as `npx skills`: `list`, `find`, `update`, `remove`). Skills are instructions only; Flute never runs code from them.
+- Video is sent to the model as a few frames, since chat APIs take images, not video.
+
 ### Weather where you are
 
 Pick a city, or turn on **Follow my location**: Flute updates the city when you have moved more than 5 km. It uses approximate location only, only while Flute is open, and never asks on its own.
@@ -104,6 +114,7 @@ Pick a city, or turn on **Follow my location**: Flute updates the city when you 
 | Do Not Disturb access | Alarms-only while sleeping | Sleep mode |
 | Accessibility (Flute lock service) | `GLOBAL_ACTION_LOCK_SCREEN` only | Double-tap to lock |
 | Approximate location | Pick the weather city | Follow my location |
+| Calendar, Contacts | Let the assistant read and change them, after you allow each action | Ask Flute (off until you switch it on) |
 | Network | Weather (Open-Meteo), IMAP if you add mail | Weather, mail |
 
 Everything is opt-in and off until you enable it. Flute reads no message bodies from mail, stores IMAP passwords in the Android keystore, and has no analytics or server of its own.
@@ -112,13 +123,18 @@ Everything is opt-in and off until you enable it. Flute reads no message bodies 
 
 ## Build it yourself
 
-You need **Flutter (stable channel)**, **JDK 17** and the **Android SDK**. Check with `flutter doctor`.
+You need **Flutter (stable channel)**, **JDK 17**, the **Android SDK** and a **Rust toolchain** ([rustup](https://rustup.rs)). Check with `flutter doctor` and `rustc --version`.
+
+```bash
+rustup target add aarch64-linux-android   # add armv7-linux-androideabi / x86_64-linux-android for those builds
+```
 
 ```bash
 git clone https://github.com/igun997/flute-launcher.git
 cd flute-launcher
 flutter pub get
 flutter analyze && flutter test
+cargo test -p hub                      # the Rust side
 
 flutter run                            # debug build on a connected phone
 flutter build apk --release --target-platform android-arm64
@@ -208,10 +224,20 @@ lib/pets        companion simulation, sprites, stage
 lib/weather     Open-Meteo client, location following
 lib/email       IMAP inbox
 lib/lock        lockscreen
+lib/agent       AI agent: providers, tools, MCP, skills, chat
+lib/rust        Dart client for the Rust core
+native/hub      Rust core (Rinf): archives, hashing, categories, search
 android/app/src/main/kotlin   notification listener, lockscreen, DND, accessibility lock, wave to wake
 shaders         sky, mode transition and window glow fragment shaders
 docs/SPEC.md    architecture notes
 ```
+
+## Performance
+
+Heavy jobs run in a small Rust crate through [Rinf](https://github.com/cunarist/rinf), but only after being
+measured on a real phone first. SHA-256 is 13x faster, unzipping skills 4x, app categories 5x. Method,
+numbers, what stayed in Dart and why: [docs/PERFORMANCE.md](docs/PERFORMANCE.md). Run the benchmark on
+your own phone by long-pressing the version text at the bottom of Settings.
 
 ## Contributing
 

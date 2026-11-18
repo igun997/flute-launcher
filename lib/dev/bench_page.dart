@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../app/theme.dart';
+import '../rust/rust_core.dart';
 import 'benchmarks.dart';
 
 /// Hidden developer page (long-press the version in Settings): times the heavy workloads on this
@@ -31,7 +32,14 @@ class _BenchPageState extends State<BenchPage> {
     }
 
     log('BENCH build=${kReleaseMode ? 'release' : kProfileMode ? 'profile' : 'debug'}');
-    await runBenchmarks(fixtures, dartWorkloads, log: log);
+    await runBenchmarks(fixtures, dartWorkloads, log: (l) => log(l.replaceFirst('BENCH ', 'BENCH dart/')));
+    if (RustCore.instance.isStarted) {
+      // The search index lives in Rust: fill it first, outside the timed searches.
+      await RustCore.instance.setModels(fixtures.models);
+      await runBenchmarks(fixtures, rustWorkloads, log: (l) => log(l.replaceFirst('BENCH ', 'BENCH rust/')));
+    } else {
+      log('BENCH rust: not started');
+    }
     debugPrint('BENCH done');
     if (mounted) setState(() => _running = false);
   }

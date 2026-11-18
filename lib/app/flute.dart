@@ -20,6 +20,7 @@ import '../email/email_service.dart';
 import '../lock/lock_settings.dart';
 import '../native/flute_native.dart';
 import '../pets/pet_library.dart';
+import '../rust/rust_core.dart';
 import '../pets/pet_settings.dart';
 import '../weather/weather_service.dart';
 
@@ -77,7 +78,9 @@ class Flute {
 
   static Future<Flute> create() async {
     final prefs = await SharedPreferences.getInstance();
-    final engine = await CategoryEngine.load();
+    final engine = await CategoryEngine.load(
+      bulkKeywords: RustCore.instance.isStarted ? RustCore.instance.categorize : null,
+    );
     final repo = AppRepository(prefs, engine);
     final modes = ModeEngine(prefs)..load();
     final weather = WeatherService();

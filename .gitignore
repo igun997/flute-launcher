@@ -63,3 +63,8 @@ key.properties
 *.iml
 __pycache__/
 rflutter.toml
+
+# Rust related
+/.cargo/
+/target/
+

@@ -1,0 +1,15 @@
+# This file is used for telling Rust-related tools
+# where various Rust crates are.
+# This also unifies `target` output folder and
+# various Rust configurations.
+
+[workspace]
+resolver = "3"
+members = ["native/*"]
+
+# Speed matters here, size second: this is the point of moving work to Rust.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true

@@ -11,6 +11,8 @@ dependencies:
   enough_mail: ^3.0.0
   flutter_secure_storage: ^11.2.0
   http: ^1.6.0
+  rinf: ^8.11.0
+  tuple: ^2.0.2
   mcp_dart: ^2.4.4
   gpt_markdown: ^1.4.1
   flutter_animate: ^4.5.2

@@ -11,6 +11,7 @@ import '../agent/llm/model_info.dart';
 import '../agent/llm/sse.dart';
 import '../core/category_engine.dart';
 import '../core/models.dart';
+import '../rust/rust_core.dart';
 
 /// One timed workload. [run] does the whole job and returns a checksum the caller compares across
 /// implementations (Dart vs Rust), so a fast but wrong answer cannot pass.
@@ -168,3 +169,82 @@ Future<List<BenchResult>> runBenchmarks(
   }
   return results;
 }
+
+/// The same jobs done by the Rust side through Rinf. Checksums must equal the Dart ones.
+final List<Workload> rustWorkloads = [
+  Workload('rust_ping', 'Empty round trip to Rust and back (the bridge itself)', (f) async {
+    for (var i = 0; i < 100; i++) {
+      await RustCore.instance.ping();
+    }
+    return 'x100';
+  }),
+  Workload('sha256_5mb', 'SHA-256 of a 5 MB buffer', (f) async => (await RustCore.instance.sha256(f.blob)).substring(0, 16)),
+  Workload('zip_extract_hash', 'Unzip 300 files and hash their contents (skill install)', (f) async {
+    final r = await RustCore.instance.unzip(f.zip);
+    // Same digest as the Dart workload: sorted paths, path NUL content.
+    final paths = r.files.keys.toList()..sort();
+    final out = BytesBuilder(copy: false);
+    for (final p in paths) {
+      out.add(utf8.encode(p));
+      out.addByte(0);
+      out.add(r.files[p]!);
+    }
+    return '${r.files.length}:${(await RustCore.instance.sha256(out.takeBytes())).substring(0, 16)}';
+  }),
+  Workload('sse_json_4000', 'Parse a 4000-event chat stream, 1 KB chunks, pipelined', (f) async {
+    final done = Completer<String>();
+    final text = StringBuffer();
+    var usage = 0;
+    final stream = RustCore.instance.openSse((d) {
+      text.write(d.text);
+      if (d.completionTokens > 0) usage = d.completionTokens;
+      if (d.done) done.complete('${text.length}:$usage');
+    });
+    for (var i = 0; i < f.sseBytes.length; i += 1024) {
+      final end = min(i + 1024, f.sseBytes.length);
+      RustCore.instance.feedSse(stream, Uint8List.sublistView(f.sseBytes, i, end), last: end == f.sseBytes.length);
+    }
+    return done.future;
+  }),
+  Workload('sse_json_4000_one_buffer', 'The same stream sent as one buffer', (f) async {
+    final done = Completer<String>();
+    final text = StringBuffer();
+    var usage = 0;
+    final stream = RustCore.instance.openSse((d) {
+      text.write(d.text);
+      if (d.completionTokens > 0) usage = d.completionTokens;
+      if (d.done) done.complete('${text.length}:$usage');
+    });
+    RustCore.instance.feedSse(stream, f.sseBytes, last: true);
+    return done.future;
+  }),
+  Workload('model_search_5000', 'Six searches over 5000 models (index already in Rust)', (f) async {
+    var total = 0;
+    for (final q in f.queries) {
+      total += (await RustCore.instance.searchModels(q)).length;
+    }
+    return '$total';
+  }),
+  Workload('model_index_5000', 'Send 5000 models to Rust (once per catalog refresh)', (f) async => '${await RustCore.instance.setModels(f.models)}'),
+  Workload('categorize_3000', 'Categorize 3000 installed apps by keywords', (f) async {
+    final rules = await RustCore.instance.categorize(f.apps);
+    final counts = List.filled(AppCategory.values.length, 0);
+    for (final r in rules) {
+      counts[_ruleToCategory(r).index]++;
+    }
+    return counts.join(',');
+  }),
+];
+
+AppCategory _ruleToCategory(int rule) => switch (rule) {
+      0 => AppCategory.banking,
+      1 => AppCategory.chat,
+      2 => AppCategory.social,
+      3 => AppCategory.games,
+      4 => AppCategory.media,
+      5 => AppCategory.shopping,
+      6 => AppCategory.travel,
+      7 => AppCategory.work,
+      8 => AppCategory.tools,
+      _ => AppCategory.other,
+    };

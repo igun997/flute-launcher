@@ -11,6 +11,11 @@ runs:
       with:
         channel: stable
         cache: true
+    # The Rust side (native/hub) is built by Cargokit during the Android build.
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android
+    - uses: Swatinem/rust-cache@v2
     - run: flutter --version
       shell: bash
     - run: flutter pub get
