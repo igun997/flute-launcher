@@ -416,3 +416,240 @@ Tests: widget tests for the confirm flow (`ConfirmController` ordering, session 
 ## Owner
 
 The runtime, `Flute` wiring, the Shell entry (swipe right from Home), integration and the build.
+
+# v2 additions
+
+Same rules as above (no flutter/dart/rflutter in a slice; the owner builds; English UI; `material_ui`;
+never log secrets or message content; tests under `test/agent/<slice>/`). Read the existing files you
+touch first. Shared interfaces already present: `AgentTool`, `ToolSource`, `ToolRisk`, `Confirmer`
+(lib/agent/tools/agent_tool.dart), `SecretStore` (lib/agent/auth/secret_store.dart), `LlmClient` types,
+`AgentRuntime` (lib/agent/runtime/agent_runtime.dart, owner only), `Flute` (lib/app/flute.dart, owner only).
+Settings sections are written as separate widget files and wired by the owner into
+`agent_settings_page.dart`: each section is a `StatelessWidget`/`StatefulWidget` taking
+`{required Flute flute}`; the owner adds the fields below to `Flute`.
+
+## Slice L: launcher control and fixes (AgentLauncher)
+Files: `lib/agent/tools/launcher_tools.dart`, edits to `builtin_tools.dart`, `calendar_tools.dart`,
+`contact_tools.dart`, `lib/agent/ui/composer.dart`, `lib/home/shell.dart`, `lib/home/settings_page.dart`,
+`lib/agent/ui/agent_settings_page.dart` (bottom padding only), `lib/app/flute.dart` (only the
+`externalFlow` helper below), tests.
+1. **Launcher tools** (group `launcher`, default on, risk: reads `read` + source `launcher`, all
+   changes `write`). The agent manages the launcher through `ModeEngine`, `AppRepository`, `LockSettings`,
+   `FluteNative` (read lib/core/mode_engine.dart, models.dart, app_repository.dart, lib/home/mode_sheet.dart,
+   lib/home/settings_page.dart to learn every capability; cover what the UI can do). Tool names (exact):
+   `launcher_status` (current mode, until when, schedules, favorites, DND state), `launcher_set_mode`
+   (mode free|work|focus|sleep, optional minutes), `launcher_wake_up`, `launcher_list_schedules`,
+   `launcher_add_schedule` / `launcher_update_schedule` / `launcher_delete_schedule` (days, start, end,
+   mode, name), `launcher_list_apps` (query optional, category optional, limit default 50; no parameters
+   lists the first apps), `launcher_set_app_category`, `launcher_pin_app` / `launcher_unpin_app`,
+   `launcher_list_pins`, `launcher_set_always_allowed` if the engine has that rule, `launcher_set_setting`
+   for simple toggles that exist (pets on/off, follow location, lockscreen) only if safe. Describe each
+   call with real values. `current_time` stays in time tools.
+2. **Calendar**: `calendar_list_events` must take `from`/`to` (ISO local or `YYYY-MM-DD`, to inclusive for
+   dates), default today to +7 days, `limit` default 50 (max 200), optional `calendarId`, and say in
+   the result how many matched and whether the list was cut. A range longer than 366 days is clamped
+   with a note. **Contacts**: `contacts_search` with NO parameters returns the first contacts (name order)
+   up to `limit` (default 25, max 100); with `query` it searches name, phone, email, company; result says
+   total and whether cut. Fix wording in the tool descriptions so the model calls them without asking
+   the user for parameters.
+3. **Camera/picker bug**: coming back from the camera or a picker lands on Home instead of attaching.
+   Cause: `Shell.didChangeAppLifecycleState` calls `_goHome()` on every resume after a background.
+   Add `Flute.externalFlow<T>(Future<T> Function() run)` (counter + a 2 s grace after it ends) and make
+   Shell skip `_goHome` while it is active; wrap every `image_picker` / `file_picker` call in
+   composer.dart with it. Verify nothing else can cause the page to change (the Home button still
+   goes Home via the native `homePressed` event). Also keep the composer's draft and the chat intact.
+   Add a widget/unit test for the guard timing.
+4. **Settings bottom clip**: the last item of `SettingsPage` (and `AgentSettingsPage`, `McpServerPage`,
+   other long pages in lib/agent/ui) is hidden behind the system navigation bar. Add bottom padding
+   `MediaQuery.paddingOf(context).bottom + 24` to every long ListView/scroll body in lib/home/settings_page.dart and
+   lib/agent/ui/agent_settings_page.dart (other ui files are owned by other agents; list the ones you
+   did not touch in your final message).
+
+## Slice W: web tools (AgentWeb)
+Files: `lib/agent/web/web_settings.dart` (prefs/secrets), `lib/agent/web/web_tools.dart`,
+`lib/agent/ui/web_settings_section.dart`, tests. Providers: **Tavily** (https://docs.tavily.com: `POST
+https://api.tavily.com/search`, `/extract`) and **Firecrawl** (https://docs.firecrawl.dev: v2 `search`,
+`scrape`, `/v2/...` Bearer key). Read both docs for the current API and use them exactly.
+```dart
+enum WebProvider { tavily, firecrawl }
+class WebSettings extends ChangeNotifier {
+  WebSettings({required SharedPreferences prefs, required SecretStore secrets, http.Client? httpClient});
+  Future<void> load();
+  WebProvider? get provider;            // active one, null when no key saved
+  bool hasKey(WebProvider p);
+  Future<void> saveKey(WebProvider p, String key);   // validates with a tiny request, throws a readable error
+  Future<void> removeKey(WebProvider p);
+  Future<void> setProvider(WebProvider p);
+}
+class WebTools implements ToolSource { WebTools(WebSettings s, {http.Client? httpClient}); }
+```
+Tools (source `web`, risk `read`, no confirmation): `web_search` (query, max_results default 5, optional
+`time_range`, `include_domains`), `web_fetch` (url -> clean markdown text, truncated to 12 000 chars with a note),
+plus provider extras if natural (`web_map`/crawl are out). Results are compact markdown with titles, urls
+and snippets, never raw JSON; errors map to readable `ToolResult.error`. Tools are only listed when a key is saved. Never send
+the user's personal data in a search unless the model chose it. URL safety: only http(s), refuse localhost/private
+IPs for `web_fetch`. `WebSettingsSection({required Flute flute})` in the UI file: provider choice, key
+fields (saved keys never shown again, only "Saved"), remove, a "Get a key" link (url_launcher).
+Also check that **tables render** in chat: read lib/agent/ui/chat_bubbles.dart and the gpt_markdown
+version in pubspec.lock; write a widget test rendering a GitHub-style table inside `AssistantMessage`
+(header row, alignment colons, inline `code` and **bold** in cells, a long table that must scroll
+horizontally instead of overflowing) and fix chat_bubbles.dart if it fails or overflows (you own
+chat_bubbles.dart for this task).
+
+## Slice O: MCP OAuth (AgentMcpOauth)
+Files: `lib/agent/mcp/mcp_oauth.dart`, edits to `mcp_manager.dart`, `mcp_server_config.dart`,
+`mcp_presets.dart`, `lib/agent/ui/mcp_settings.dart`, tests in test/agent/mcp/.
+Add `McpAuthKind.oauth`: sign in through the browser, no token typing. Follow the MCP authorization
+spec (https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization): on 401 read
+`WWW-Authenticate` / `/.well-known/oauth-protected-resource`, then `/.well-known/oauth-authorization-server`
+(or OIDC discovery), **dynamic client registration** (RFC 7591) with `client_name: Flute`, a loopback
+`redirect_uri` (`http://127.0.0.1:<port>/callback`, reuse `lib/agent/auth/loopback_server.dart` and
+`pkce.dart`), PKCE S256, `resource` parameter (RFC 8707), scopes from the server metadata, token
+exchange, refresh with rotation, tokens stored only in `SecretStore` (`agent.mcp.oauth.<id>` JSON).
+mcp_dart 2.4.4 has OAuth helpers (`OAuthClientProvider`, `OAuthAuthorizationCodeProvider`,
+`StreamableHttpClientTransportOptions(authProvider:)`, `finishAuthRedirect`): read its source and use
+them if they fit, otherwise implement the flow yourself and send headers as the manager already does.
+Behavior: adding a server with auth `oauth` (default for the GitHub and Atlassian presets: GitHub
+`https://api.githubcopilot.com/mcp/` supports OAuth; Atlassian `https://mcp.atlassian.com/v2/mcp` is OAuth
+2.1; keep the token/Basic path as "Use a token instead") connects; if sign-in is needed the manager
+status becomes `needsSignIn` (new `McpStatus` value) and `McpManager.signIn(id)` opens the browser, waits
+for the callback (cancelable, 5 min), then connects. `signOut(id)` deletes tokens (and revokes when the
+server offers it). Refresh before expiry and on 401 once. UI: in `mcp_settings.dart` the add-server
+page offers "Sign in with browser" first; server detail shows signed-in state and Sign in/Sign out; no
+secrets shown. Tests: discovery parsing, registration body, authorize URL (resource, PKCE), token
+exchange and refresh with `MockClient`, status transitions with a fake server returning 401.
+
+## Slice V: voice (AgentVoice)
+Files: `android/app/src/main/kotlin/id/nst/focus_launcher/VoiceNative.kt` (+ registration, one small edit in
+`FluteEngine.kt`), `AndroidManifest.xml` (RECORD_AUDIO and `<queries>` for speech/TTS services),
+`lib/agent/voice/voice_native.dart`, `voice_controller.dart`, `voice_confirmer.dart`, `voice_orb.dart`,
+`voice_page.dart`, `voice_settings_section.dart`, `shaders/orb.frag` (+ pubspec shaders entry),
+`lib/agent/ui/agent_page.dart` (add the mic entry only), `lib/agent/tools/audio_tools.dart`, tests.
+1. **Native** (`flute/voice` MethodChannel + `flute/voice_events` EventChannel, written like
+   FluteNative.kt/FluteEvents.kt): `SpeechRecognizer` (on-device when `isOnDeviceRecognitionAvailable`, else
+   the default service; partial results, final result, RMS level events 0..1, errors mapped to a small enum,
+   language from settings default = device locale), `TextToSpeech` (queue, `speak(text, utteranceId)`, stop,
+   voices list, rate, language, `onDone`/`onError` events), RECORD_AUDIO permission request flow (reuse the
+   LocationAccess pattern for the dialog). Everything on the main thread as Android requires, released
+   in `onDestroy`.
+2. **Dart**: `VoiceController extends ChangeNotifier` with state `idle | listening | thinking | speaking`,
+   `levels` (ValueListenable<double>, smoothed), `partial` text, `Future<String?> listenOnce()`, `speak(text)`
+   (Markdown stripped to speakable text: no code blocks (say "code block"), table rows read as sentences, links
+   read by title), `stop()`, `speakStream`-style incremental speaking that starts at the first sentence while
+   the reply still streams, settings (language, rate, auto-speak replies, hands-free loop: after the reply
+   finishes listen again).
+3. **Voice mode UI** `VoicePage` (full screen, opened from a mic button in AgentPage): the **Jarvis-style
+   orb** drawn by `shaders/orb.frag` (fragment program via `FragmentProgram`, uniforms: time, level, state,
+   colors; concentric rotating rings, a glowing core that pulses with the mic level while listening, a slow
+   breathing glow while thinking, ripples with the reply audio while speaking; cheap: one full-size quad,
+   about 30 fps via a Ticker only while the page is visible, honours `disableAnimations`), partial text
+   under it, a live transcript of the last exchange (Markdown tables/code shown on screen even though not
+   read aloud), tool cards, a hands-free toggle, tap orb = interrupt/stop, close button. The page uses the
+   same `AgentRuntime` (`flute.agent`): send the final transcript, speak the reply as it streams.
+4. **Voice approval**: `VoiceAwareConfirmer implements Confirmer` wrapping the on-screen `ConfirmController`:
+   in voice mode it speaks "<summary>. Say allow or deny." (the summary is the tool's describeCall), listens,
+   accepts allow/yes/ok/go ahead/do it and deny/no/cancel/stop (English; configurable word lists, also Indonesian
+   "ya", "boleh", "tidak", "jangan"), unclear answers re-ask once then deny, and the on-screen sheet stays
+   usable at the same time (first answer wins). Outside voice mode it only delegates.
+5. **Transcribe tool** (`AudioTools implements ToolSource`, source `audio`, risk read): `audio_transcribe(path or
+   attachment name)` sends an audio file to the active OpenAI-compatible provider's
+   `POST {base}/audio/transcriptions` (multipart, model from settings default `whisper-1`, or the first model
+   whose id contains `whisper`/`transcribe` in the catalog cache) and returns the text; on provider failure
+   a readable error. Attachment kind audio: composer needs an "Audio" option and the runtime transcribes
+   attached audio before sending (tell the owner what API you need from AttachmentPrep).
+Permission copy: explain why the microphone is needed before asking.
+
+## Slice S: sandbox (AgentSandbox)
+Files: `lib/agent/sandbox/*` (provider interface, `instabox_provider.dart`, `daytona_provider.dart`,
+`local_wasm_provider.dart`, `sandbox_manager.dart`, `sandbox_tools.dart`, `sandbox_settings.dart`),
+`lib/agent/ui/sandbox_settings_section.dart`, Rust in `native/hub/src/wasm.rs` + signals (add to
+`signals.rs`, register in `lib.rs`/`jobs.rs::start`, run `rinf gen` is done by the owner: list the signals), tests,
+`native/hub/Cargo.toml` deps. Read https://www.daytona.io/docs (API + toolbox `process/execute`) and Instabox
+(`instabox --help`, `instabox exec --help`, API at https://api.instabox.sh with `ibk_...` keys: find the REST
+endpoints for create, exec, files, pause/stop, delete via the CLI's `--help`, its docs, or the HTTP calls the CLI
+makes; the `instabox` binary is installed on the dev machine for reading help only).
+```dart
+abstract class SandboxProvider {
+  String get id; String get label;
+  Future<SandboxSession> open();                 // creates or starts, returns when ready to run code
+}
+abstract class SandboxSession {
+  String get label;                              // for the UI
+  Future<ExecResult> runPython(String code, {Duration timeout});   // stdout, stderr, exitCode, files changed
+  Future<ExecResult> runShell(String command, {Duration timeout}); // remote providers only; local throws Unsupported
+  Future<void> writeFile(String path, List<int> bytes); Future<List<int>> readFile(String path);
+  Future<void> close();                          // MUST stop the paid resource: delete the sandbox the app created,
+                                                 // or pause/stop a pre-existing one the user picked
+}
+class SandboxManager extends ChangeNotifier {
+  SandboxManager({required SharedPreferences prefs, required SecretStore secrets, http.Client? httpClient});
+  Future<void> load();
+  List<SandboxProviderConfig> get providers;     // instabox, daytona (key saved?), local wasm (always)
+  Future<void> saveKey(String providerId, String key, {String? apiUrl});   // validate with a cheap call
+  String? preferredProviderId;                   // user's choice; null = best available (remote with key, else local)
+  Future<SandboxSession> session();              // lazily opens one per agent run, reused by every call in the run
+  Future<void> shutdown();                       // closes the session now; idempotent; also called by an idle timer (default 90 s) and when the app pauses
+  bool get running;
+}
+class SandboxTools implements ToolSource { SandboxTools(SandboxManager m); }
+```
+Tools (source `sandbox`): `sandbox_python` (code, optional `timeout_s` default 60, max 300), `sandbox_shell`
+(remote only), `sandbox_write_file`, `sandbox_read_file` (text up to 200 KB; binary returned as a note); all
+`write` risk because they execute code (confirm sheet shows the code, trimmed to 600 chars). Output returned
+compact (stdout/stderr tail 8 000 chars, exit code, elapsed). **Lifecycle**: the sandbox opens on first use in a
+run and `shutdown()` runs when the run ends (the owner calls it from the runtime) and by the idle timer; an
+ephemeral remote sandbox is deleted, a user-selected existing one is paused/stopped; failures to stop are
+shown loudly in the status and retried. Setting: "Keep warm for N minutes" default 0. **Local default**
+(no remote key, or the user picks it): `LocalWasmProvider` runs a WASI Python (CPython compiled to
+WASI, e.g. VMware Wasm Labs `python-3.12.0.wasm` or the best current build: pick one with a stable download URL
+and pin its SHA-256 in code; download on first use to the app's support dir with a progress callback and
+size check, never bundle it in the APK) through **wasmi** (pure Rust interpreter, small) or wasmtime if it
+builds for Android (`aarch64-linux-android`; prefer wasmi unless startup is unusable): Rust job
+`WasmRunRequest { id, argv, stdin, env, files(preopen dir contents), timeout_ms, max_memory_mb }` +
+`WasmRunResponse { id, exit_code, stdout, stderr, error }` with the module bytes held in Rust after a
+`WasmLoadRequest`, execution on `spawn_blocking`, fuel/epoch timeout, memory cap, no network, no host fs
+except an in-memory preopen dir. Document the real startup time on a phone class device from the Rust
+unit test if it can run `python -c "print(1+1)"` on the dev machine (the test may skip when the module file
+is absent). Settings section: provider choice, API key fields (instabox, daytona; saved keys hidden), local
+runtime status (download/size/delete), "stops after use" explanation, a test button that opens, runs
+`print(1+1)`, and closes, showing the elapsed time.
+
+## Slice R: routines (AgentRoutines)
+A routine is a saved prompt the LLM runs by itself on a trigger and reports by notification. Files:
+Kotlin `RoutineScheduler.kt`, `RoutineReceiver.kt`, `Notifier.kt` (new, `android/app/src/main/kotlin/id/nst/focus_launcher/`),
+registration in `AndroidManifest.xml` (receivers; `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM` or inexact, `RECEIVE_BOOT_COMPLETED`
+if absent), a small hook in `BootReceiver.kt` to reschedule, channel `flute/routines` (MethodChannel + events) written in a new
+`RoutineNative.kt` and registered with ONE added line in `FluteEngine.kt`; Dart in `lib/agent/routines/`:
+`routine.dart`, `routine_store.dart`, `routine_runner.dart`, `routine_native.dart`, `routine_tools.dart`; UI in
+`lib/agent/ui/routines_page.dart` and `lib/agent/ui/routines_section.dart` (a settings section the owner wires); tests.
+```dart
+enum RoutineTrigger { daily, weekly, interval }   // daily: hh:mm; weekly: weekdays + hh:mm; interval: every N minutes (min 15)
+class Routine { final String id, name, prompt; final RoutineTrigger trigger; final int minuteOfDay; final Set<int> weekdays; final int everyMinutes;
+  final bool enabled; final bool allowWrites;       // default false: a routine only reads
+  final bool speak; final String? modelOverride; final DateTime? lastRun; final String? lastResult /* trimmed */; ... toJson/fromJson/copyWith }
+class RoutineStore extends ChangeNotifier { RoutineStore({required SharedPreferences prefs, RoutineNative? native}); Future<void> load();
+  List<Routine> get routines; Future<Routine> save(Routine r); Future<void> remove(String id); Future<void> setEnabled(String id, bool on);
+  List<RoutineRun> history(String id); }            // last 20 runs: when, ok/error, tokens, tps, result text (trimmed 4000)
+class RoutineRunner { RoutineRunner({required Flute-independent deps: ProviderStore providers, List<ToolSource> toolSources, SkillManager skills,
+    RoutineStore store, RoutineNative native, DateTime Function()? clock});
+  Future<RoutineRun> run(Routine r);               // creates its OWN AgentRuntime (never the visible chat), sends the prompt, waits, posts a notification
+  void start();                                    // listens to native fire events and to fires that happened while the app was dead (getPendingFires)
+}
+class RoutineTools implements ToolSource { RoutineTools(RoutineStore s, RoutineRunner r); }   // routine_list, routine_create, routine_update,
+                                                    // routine_delete, routine_run_now (writes ask first; list is read, source 'launcher')
+```
+Behavior: the schedule lives in Android (AlarmManager `setExactAndAllowWhileIdle` when exact alarms are allowed, else
+`setAndAllowWhileIdle`; rescheduled after boot, timezone change, package replace and each fire). When it fires and the Flutter engine
+is not running, the receiver starts `FluteEngine.get(context)` (the shared engine) WITHOUT showing any activity, holds a short wake
+lock, and queues the fire for Dart (Dart drains `getPendingFires()` when `RoutineRunner.start()` runs and also receives `fire` events); it
+finishes within a bounded time (default 3 minutes; cancel and notify "timed out"). Run policy: the routine's `AgentRuntime` gets a
+`Confirmer` that **denies every write** unless `allowWrites` is true, in which case a write is allowed only for tools whose risk is write
+AND source is not `sandbox`/`launcher` mode-changes... (keep it simple: with allowWrites true, writes are allowed except sandbox code
+execution and deleting anything; document the rule in the UI). The result is posted as a notification (title = routine name, big text =
+first 400 chars of the answer, tap opens the Ask page with the full result as a message; actions "Run again"). If `speak` is on and the
+screen is on, speak a one-sentence summary. Notification permission (Android 13) is requested from the UI when the first routine is
+enabled. Every run records history with tokens and tokens/second. A routine that fails twice in a row is paused with a notification.
+UI: a Routines page (list with next run time, enable switch, run now, last result), an editor (name, prompt, trigger picker, weekday chips,
+interval, allow-writes switch with the rule explained, speak switch), empty state with 3 example routines ("Morning briefing:
+today's calendar and weather", "Evening wind-down: switch to Sleep mode at 22:30 and say goodnight" (needs allowWrites), "Weekly: summarise
+unread mail"). Also a "Routines" row in the agent settings section list (the owner wires `RoutinesSection`).

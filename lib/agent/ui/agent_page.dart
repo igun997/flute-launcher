@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../app/flute.dart';
 import '../../app/theme.dart';
 import '../runtime/agent_runtime.dart';
+import '../voice/voice_page.dart';
 import 'agent_settings_page.dart';
 import 'chat_bubbles.dart';
 import 'composer.dart';
@@ -124,6 +125,15 @@ class _AgentPageState extends State<AgentPage> {
       ),
       title: const Text('Ask Flute', style: TextStyle(fontWeight: FontWeight.w300)),
       actions: [
+        IconButton(
+          tooltip: 'Voice',
+          icon: const Icon(Icons.mic_none),
+          onPressed: () => Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => VoicePage(agent: widget.flute.agent, voice: widget.flute.voice),
+            ),
+          ),
+        ),
         _ModelChip(
           label: _runtime.model ?? 'Choose model',
           onTap: () => showModelPicker(context, flute: widget.flute),

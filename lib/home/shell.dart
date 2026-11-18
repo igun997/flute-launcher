@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../agent/routines/routine.dart';
 import '../agent/ui/agent_page.dart';
+import '../agent/ui/routines_page.dart';
 import '../app/flute.dart';
 import '../app/theme.dart';
 import '../native/flute_native.dart';
@@ -25,6 +27,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   final _pages = PageController(initialPage: _homePage);
   final _homeVisible = ValueNotifier<bool>(true);
   StreamSubscription<NativeEvent>? _events;
+  StreamSubscription<RoutineRun>? _routineOpened;
   bool _wasBackgrounded = false;
 
   @override
@@ -35,12 +38,18 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
     _events = FluteNative.events.listen((e) {
       if (e.isHomePressed) _goHome();
     });
+    // Tapping a routine's notification opens its full result.
+    _routineOpened = widget.flute.routineRunner.opened.listen((run) {
+      final routine = widget.flute.routines.byId(run.routineId);
+      if (mounted && routine != null) showRoutineRunSheet(context, run, routine);
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _events?.cancel();
+    _routineOpened?.cancel();
     _pages.dispose();
     _homeVisible.dispose();
     super.dispose();
@@ -52,7 +61,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
       _wasBackgrounded = true;
     } else if (state == AppLifecycleState.resumed) {
       // Coming back to the launcher (Home pressed, app closed) always lands on the home page.
-      if (_wasBackgrounded) _goHome();
+      if (_wasBackgrounded && !Flute.inExternalFlow) _goHome();
       _wasBackgrounded = false;
       unawaited(widget.flute.onResume());
     }

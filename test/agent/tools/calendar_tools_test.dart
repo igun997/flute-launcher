@@ -121,7 +121,7 @@ void main() {
         'from': '2026-11-20',
         'to': '2026-11-23',
       });
-      expect(result.text, '1 event(s):\n'
+      expect(result.text, '1 event(s) match:\n'
           '- ev1 | Conference | Fri 2026-11-20 to Sat 2026-11-21 | calendar cal-1');
     });
 
@@ -153,7 +153,7 @@ void main() {
       });
       final rows = result.text.split('\n').where((line) => line.startsWith('- '));
       expect(rows, hasLength(5));
-      expect(result.text.split('\n').first, '30 events, showing the first 5:');
+      expect(result.text.split('\n').first, '30 events match, showing the first 5. The list was cut: narrow the range or raise limit (max 200).');
     });
 
     test('a range ending before it starts is refused', () async {

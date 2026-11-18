@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:mcp_dart/mcp_dart.dart'
     show
         AudioContent,
@@ -24,10 +25,13 @@ import 'package:mcp_dart/mcp_dart.dart'
         Transport,
         UnauthorizedError;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
+import '../auth/loopback_server.dart';
 import '../auth/secret_store.dart';
 import '../tools/agent_tool.dart';
+import 'mcp_oauth.dart';
 import 'mcp_presets.dart';
 import 'mcp_server_config.dart';
 
@@ -37,7 +41,7 @@ export 'mcp_server_config.dart';
 /// Builds the transport for a server. Tests inject fakes; the app uses Streamable HTTP.
 typedef McpTransportFactory = Transport Function(Uri url, Map<String, String> headers);
 
-enum McpStatus { disconnected, connecting, connected, failed }
+enum McpStatus { disconnected, connecting, connected, needsSignIn, failed }
 
 /// A failure the person should read, such as a missing token or a refused address.
 class McpException implements Exception {
@@ -99,9 +103,15 @@ class McpManager extends ChangeNotifier implements ToolSource {
     required SharedPreferences prefs,
     required SecretStore secrets,
     McpTransportFactory? transportFactory,
+    http.Client? httpClient,
+    Future<bool> Function(Uri url)? openBrowser,
   })  : _prefs = prefs,
         _secrets = secrets,
-        _transportFactory = transportFactory;
+        _transportFactory = transportFactory,
+        _oauth = McpOAuth(
+          httpClient: httpClient ?? http.Client(),
+          openBrowser: openBrowser ?? _launchInBrowser,
+        );
 
   static const _serversKey = 'agent.mcp.servers';
   static const connectTimeout = Duration(seconds: 15);
@@ -109,6 +119,10 @@ class McpManager extends ChangeNotifier implements ToolSource {
   static const _maxToolPages = 20;
   static const _maxNameChars = 64;
   static const _maxServerSlugChars = 24;
+  static const _oauthSecretPrefix = 'agent.mcp.oauth.';
+
+  static Future<bool> _launchInBrowser(Uri url) =>
+      launchUrl(url, mode: LaunchMode.externalApplication);
 
   /// The raw tool name behind a tool from this manager, or null for other tools.
   static String? rawToolNameOf(AgentTool tool) => tool is McpAgentTool ? tool.rawName : null;
@@ -123,6 +137,9 @@ class McpManager extends ChangeNotifier implements ToolSource {
   final Map<String, McpClient> _clients = {};
   final Map<String, List<McpAgentTool>> _tools = {};
   final Map<String, Future<void>> _connecting = {};
+  final McpOAuth _oauth;
+  final Map<String, Future<McpOAuthRecord>> _refreshes = {};
+  final Map<String, LoopbackServer> _pendingSignIns = {};
 
   /// Bumped by every disconnect, so a connect that finishes late cannot resurrect a server.
   final Map<String, int> _generation = {};
@@ -169,11 +186,13 @@ class McpManager extends ChangeNotifier implements ToolSource {
     return config;
   }
 
-  Future<McpServerConfig> addPreset(McpPreset preset, {required String secret}) async {
+  /// Adds a preset. Without a token the person signs in with the browser (`preset.auth`);
+  /// with one, the token is sent the way `preset.tokenAuth` says.
+  Future<McpServerConfig> addPreset(McpPreset preset, {String? secret}) async {
     final config = await _create(
       name: preset.title,
       url: preset.url,
-      auth: preset.auth,
+      auth: secret == null ? preset.auth : preset.tokenAuth,
       secret: secret,
       extraHeaders: preset.headers,
     );
@@ -190,11 +209,15 @@ class McpManager extends ChangeNotifier implements ToolSource {
     }
     final newUrl = url == null ? old.url : _validUrl(url).toString();
     if (secret != null) {
-      if (old.auth == McpAuthKind.none) {
+      if (!_usesToken(old.auth)) {
         throw const McpException('This server does not use a token.');
       }
       if (secret.trim().isEmpty) throw const McpException('Enter the token.');
       await _secrets.write(_secretKey(id), secret.trim());
+    }
+    if (newUrl != old.url && old.auth == McpAuthKind.oauth) {
+      // A sign-in belongs to one address, so the new address needs its own.
+      await _secrets.delete(_oauthKey(id));
     }
     _servers[index] = old.copyWith(
       name: trimmedName == null || trimmedName.isEmpty ? old.name : trimmedName,
@@ -208,13 +231,58 @@ class McpManager extends ChangeNotifier implements ToolSource {
   }
 
   Future<void> remove(String id) async {
+    cancelSignIn(id);
     disconnect(id);
     _servers.removeWhere((s) => s.id == id);
     _status.remove(id);
     _errors.remove(id);
     await _save();
     await _secrets.delete(_secretKey(id));
+    await _secrets.delete(_oauthKey(id));
     _changed();
+  }
+
+  /// Asks a server whether it needs browser sign-in, a token, or neither. Saves nothing.
+  Future<McpProbe> probe(String url) => _oauth.probe(_validUrl(url));
+
+  bool isSigningIn(String id) => _pendingSignIns.containsKey(id);
+
+  /// Opens the browser so the person can sign in, then connects with the new token.
+  Future<void> signIn(String id) async {
+    final config = _findOrNull(id);
+    if (config == null || config.auth != McpAuthKind.oauth) {
+      throw const McpException('This server does not use browser sign-in.');
+    }
+    cancelSignIn(id);
+    final loopback = await LoopbackServer.start(path: '/callback');
+    _pendingSignIns[id] = loopback;
+    try {
+      final record = await _oauth.signIn(mcpUrl: _validUrl(config.url), loopback: loopback);
+      await _secrets.write(_oauthKey(id), jsonEncode(record.toJson()));
+    } catch (e) {
+      throw McpException(_signInFailure(e));
+    } finally {
+      if (identical(_pendingSignIns[id], loopback)) _pendingSignIns.remove(id);
+      unawaited(loopback.close());
+    }
+    await connect(id);
+  }
+
+  /// Stops a sign-in that is waiting for the browser.
+  void cancelSignIn(String id) {
+    final loopback = _pendingSignIns.remove(id);
+    if (loopback != null) unawaited(loopback.close());
+  }
+
+  /// Forgets the browser sign-in and revokes it at the server when it can.
+  Future<void> signOut(String id) async {
+    _indexOf(id);
+    cancelSignIn(id);
+    final record = await _oauthRecord(id);
+    disconnect(id);
+    await _secrets.delete(_oauthKey(id));
+    if (record != null) await _oauth.revoke(record);
+    _setStatus(id, McpStatus.needsSignIn);
   }
 
   Future<void> setEnabled(String id, bool on) async {
@@ -297,6 +365,9 @@ class McpManager extends ChangeNotifier implements ToolSource {
   @override
   void dispose() {
     _disposed = true;
+    for (final id in _pendingSignIns.keys.toList()) {
+      cancelSignIn(id);
+    }
     for (final id in _clients.keys.toList()) {
       disconnect(id);
     }
@@ -321,7 +392,7 @@ class McpManager extends ChangeNotifier implements ToolSource {
     if (auth == McpAuthKind.header && (header == null || header.isEmpty)) {
       throw const McpException('Name the header that carries the token.');
     }
-    if (auth != McpAuthKind.none && (secret == null || secret.trim().isEmpty)) {
+    if (_usesToken(auth) && (secret == null || secret.trim().isEmpty)) {
       throw const McpException('Enter the token.');
     }
     final id = Uuid().v4();
@@ -333,7 +404,7 @@ class McpManager extends ChangeNotifier implements ToolSource {
       headerName: auth == McpAuthKind.header ? header : null,
       extraHeaders: extraHeaders,
     );
-    if (auth != McpAuthKind.none) {
+    if (_usesToken(auth)) {
       await _secrets.write(_secretKey(id), secret!.trim());
     }
     _servers.add(config);
@@ -350,7 +421,7 @@ class McpManager extends ChangeNotifier implements ToolSource {
     }
   }
 
-  Future<void> _connect(String id) async {
+  Future<void> _connect(String id, {bool retried = false}) async {
     final config = _findOrNull(id);
     if (config == null) return;
     disconnect(id);
@@ -360,7 +431,7 @@ class McpManager extends ChangeNotifier implements ToolSource {
     McpClient? client;
     try {
       final url = validateMcpUrl(config.url);
-      final headers = await _headersFor(config);
+      final headers = await _headersFor(config, forceRefresh: retried);
       final transport = _transportFactory != null
           ? _transportFactory(url, headers)
           : StreamableHttpClientTransport(
@@ -384,18 +455,37 @@ class McpManager extends ChangeNotifier implements ToolSource {
       _setStatus(id, McpStatus.connected);
     } catch (e) {
       if (client != null) await _closeQuietly(client);
-      if (generation == (_generation[id] ?? 0)) {
-        _releaseNames(id);
-        _tools.remove(id);
-        _setStatus(id, McpStatus.failed, error: _describeConnectError(e));
+      if (generation != (_generation[id] ?? 0)) return;
+      if (config.auth == McpAuthKind.oauth && _isUnauthorized(e) && !retried) {
+        await _connect(id, retried: true);
+        return;
       }
+      _releaseNames(id);
+      _tools.remove(id);
+      if (config.auth == McpAuthKind.oauth &&
+          (_isUnauthorized(e) || (e is McpOAuthException && e.requiresSignIn))) {
+        final message = e is McpOAuthException
+            ? e.message
+            : 'Your sign-in expired. Sign in again.';
+        _setStatus(id, McpStatus.needsSignIn, error: message);
+        return;
+      }
+      _setStatus(id, McpStatus.failed, error: _describeConnectError(e));
     }
   }
 
-  Future<Map<String, String>> _headersFor(McpServerConfig config) async {
+  Future<Map<String, String>> _headersFor(
+    McpServerConfig config, {
+    bool forceRefresh = false,
+  }) async {
     final headers = <String, String>{...config.extraHeaders};
     if (config.readOnly) headers['X-MCP-Readonly'] = 'true';
     if (config.auth == McpAuthKind.none) return headers;
+    if (config.auth == McpAuthKind.oauth) {
+      final access = await _accessToken(config, forceRefresh: forceRefresh);
+      headers['Authorization'] = 'Bearer $access';
+      return headers;
+    }
     final secret = await _secrets.read(_secretKey(config.id));
     if (secret == null || secret.isEmpty) {
       throw McpException('No token is saved for ${config.name}.');
@@ -407,10 +497,70 @@ class McpManager extends ChangeNotifier implements ToolSource {
         headers['Authorization'] = 'Basic $secret';
       case McpAuthKind.header:
         headers[config.headerName!] = secret;
-      case McpAuthKind.none:
+      case McpAuthKind.none || McpAuthKind.oauth:
         break;
     }
     return headers;
+  }
+
+  Future<String> _accessToken(
+    McpServerConfig config, {
+    required bool forceRefresh,
+  }) async {
+    final record = await _oauthRecord(config.id);
+    if (record == null) {
+      throw const McpOAuthException(
+        'Sign in to use this server.',
+        requiresSignIn: true,
+      );
+    }
+    if (!forceRefresh && record.isFresh(DateTime.now())) {
+      return record.accessToken;
+    }
+    return (await _refreshRecord(config.id, record)).accessToken;
+  }
+
+  Future<McpOAuthRecord> _refreshRecord(String id, McpOAuthRecord record) {
+    final pending = _refreshes[id];
+    if (pending != null) return pending;
+    final refresh = () async {
+      try {
+        final fresh = await _oauth.refresh(record);
+        await _secrets.write(_oauthKey(id), jsonEncode(fresh.toJson()));
+        return fresh;
+      } finally {
+        _refreshes.remove(id);
+      }
+    }();
+    _refreshes[id] = refresh;
+    return refresh;
+  }
+
+  Future<McpOAuthRecord?> _oauthRecord(String id) async {
+    final raw = await _secrets.read(_oauthKey(id));
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return McpOAuthRecord.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _oauthKey(String id) => '$_oauthSecretPrefix$id';
+
+  static bool _usesToken(McpAuthKind auth) =>
+      auth == McpAuthKind.bearer ||
+      auth == McpAuthKind.basic ||
+      auth == McpAuthKind.header;
+
+  static bool _isUnauthorized(Object e) =>
+      e is UnauthorizedError || (e is StreamableHttpError && e.code == 401);
+
+  static String _signInFailure(Object e) {
+    if (e is McpOAuthException) return e.message;
+    if (e is TimeoutException) return 'Sign-in timed out. Try again.';
+    if (e is StateError) return 'Sign-in was cancelled.';
+    return 'Sign-in failed. Try again.';
   }
 
   Future<List<Tool>> _listAllTools(McpClient client) async {
@@ -509,14 +659,17 @@ class McpManager extends ChangeNotifier implements ToolSource {
         CallToolRequest(name: tool.rawName, arguments: args),
       ));
     } catch (e) {
-      if (!_isSessionError(e)) {
+      if (!_isSessionError(e) && !_isUnauthorized(e)) {
         return ToolResult.error('${tool.serverName} failed: ${_describeCallError(e)}');
       }
     }
-    // The session expired: reconnect once and retry.
+    // The session expired or the token was refused: reconnect once and retry.
     await connect(tool.serverId);
     final retry = _clients[tool.serverId];
     if (retry == null) {
+      if (statusOf(tool.serverId) == McpStatus.needsSignIn) {
+        return ToolResult.error('${tool.serverName} needs you to sign in again in Agent settings.');
+      }
       return ToolResult.error('${tool.serverName} lost its session and could not reconnect.');
     }
     try {
@@ -572,6 +725,7 @@ class McpManager extends ChangeNotifier implements ToolSource {
 
   static String _describeConnectError(Object e) {
     if (e is McpException) return e.message;
+    if (e is McpOAuthException) return e.message;
     if (e is TimeoutException) return 'Timed out after 15 seconds.';
     if (e is FormatException) return e.message;
     if (e is UnauthorizedError) return 'The server refused the token. Check it and try again.';

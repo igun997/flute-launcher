@@ -140,7 +140,8 @@ class CalendarListEventsTool extends _CalendarTool {
     final from = optionalWhen(args, 'from') ?? dayStart(_now());
     final toText = argString(args, 'to') ?? '';
     final typedTo = optionalWhen(args, 'to');
-    var to = typedTo == null ? addDays(from, 7) : typedTo;
+    if (typedTo != null && typedTo.isBefore(from)) throw const ToolError('to must be after from.');
+    var to = typedTo ?? addDays(from, 7);
     // A plain date means that whole day, so "to" is inclusive.
     if (typedTo != null && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(toText)) {
       to = addDays(typedTo, 1);

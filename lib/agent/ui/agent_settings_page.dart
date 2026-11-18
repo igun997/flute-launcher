@@ -7,6 +7,10 @@ import '../../app/theme.dart';
 import '../auth/provider_store.dart';
 import '../llm/model_info.dart';
 import '../tools/builtin_tools.dart';
+import '../voice/voice_settings_section.dart';
+import 'sandbox_settings_section.dart';
+import 'routines_section.dart';
+import 'web_settings_section.dart';
 import 'mcp_settings.dart';
 import 'model_picker.dart';
 import 'settings_widgets.dart';
@@ -39,13 +43,25 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
         title: const Text('Agent settings', style: TextStyle(fontWeight: FontWeight.w300)),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
+        padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.paddingOf(context).bottom + 24),
         children: [
           const SettingsLabel('PROVIDER'),
           _ProviderSection(flute: flute),
           const SizedBox(height: 20),
           const SettingsLabel('TOOLS'),
           _ToolsSection(flute: flute),
+          const SizedBox(height: 20),
+          const SettingsLabel('ROUTINES'),
+          RoutinesSection(flute: flute),
+          const SizedBox(height: 20),
+          const SettingsLabel('VOICE'),
+          VoiceSettingsSection(voice: flute.voice),
+          const SizedBox(height: 20),
+          const SettingsLabel('SANDBOX'),
+          SandboxSettingsSection(manager: flute.sandbox),
+          const SizedBox(height: 20),
+          const SettingsLabel('WEB SEARCH'),
+          WebSettingsSection(flute: flute),
           const SizedBox(height: 20),
           const SettingsLabel('MCP SERVERS'),
           McpServersSection(flute: flute),

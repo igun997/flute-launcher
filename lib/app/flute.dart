@@ -6,11 +6,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../agent/auth/provider_store.dart';
 import '../agent/auth/secret_store.dart';
 import '../agent/mcp/mcp_manager.dart';
+import '../agent/routines/routine_native.dart';
+import '../agent/routines/routine_runner.dart';
+import '../agent/routines/routine_store.dart';
+import '../agent/routines/routine_tools.dart';
 import '../agent/runtime/agent_runtime.dart';
 import '../agent/skills/skill_manager.dart';
 import '../agent/skills/skill_tools.dart';
+import '../agent/sandbox/sandbox_manager.dart';
+import '../agent/sandbox/sandbox_tools.dart';
+import '../agent/tools/agent_tool.dart';
 import '../agent/tools/builtin_tools.dart';
+import '../agent/tools/audio_tools.dart';
 import '../agent/ui/confirm_controller.dart';
+import '../agent/voice/voice_confirmer.dart';
+import '../agent/voice/voice_controller.dart';
+import '../agent/voice/voice_native.dart';
+import '../agent/web/web_settings.dart';
+import '../agent/web/web_tools.dart';
 import '../core/app_icons.dart';
 import '../core/app_repository.dart';
 import '../core/category_engine.dart';
@@ -26,16 +39,48 @@ import '../weather/weather_service.dart';
 
 /// Owns every long-lived service and keeps the native lock in sync.
 class Flute {
-  Flute._(this.prefs, this.repo, this.modes, this.weather, this.providers, this.mcp, this.skills, this.builtins)
-    : style = StyleController(prefs, weather, modes),
-      lockSettings = LockSettings(prefs),
-      pets = PetSettings(prefs) {
+  Flute._({
+    required this.prefs,
+    required this.repo,
+    required this.modes,
+    required this.weather,
+    required this.providers,
+    required this.mcp,
+    required this.skills,
+    required this.builtins,
+    required this.lockSettings,
+    required this.pets,
+    required this.web,
+    required this.routines,
+    required this.voice,
+    required this.sandbox,
+    required RoutineNative routineNative,
+  }) : style = StyleController(prefs, weather, modes) {
+    // What a routine may use: everything except the routine tools themselves.
+    final shared = <ToolSource>[
+      builtins,
+      mcp,
+      SkillTools(skills),
+      WebTools(web),
+      AudioTools(providers: providers, prefs: prefs),
+      SandboxTools(sandbox),
+    ];
+    routineRunner = RoutineRunner(
+      providers: providers,
+      toolSources: shared,
+      skills: skills,
+      store: routines,
+      native: routineNative,
+      speak: (text) => voice.speakAndWait(text),
+      onRunEnd: () async => sandbox.endRun(),
+    );
     agent = AgentRuntime(
       providers: providers,
-      toolSources: [builtins, mcp, SkillTools(skills)],
+      toolSources: [...shared, RoutineTools(routines, routineRunner)],
       skills: skills,
-      confirmer: confirm,
+      confirmer: VoiceAwareConfirmer(sheet: confirm, voice: voice),
       onNewChat: confirm.reset,
+      onRunEnd: () async => sandbox.endRun(),
     );
   }
 
@@ -54,6 +99,11 @@ class Flute {
   final McpManager mcp;
   final SkillManager skills;
   final BuiltinTools builtins;
+  final WebSettings web;
+  final RoutineStore routines;
+  final VoiceController voice;
+  final SandboxManager sandbox;
+  late final RoutineRunner routineRunner;
   final ConfirmController confirm = ConfirmController();
   late final AgentRuntime agent;
   EmailService get email => EmailService.instance;
@@ -76,6 +126,25 @@ class Flute {
   StreamSubscription<NativeEvent>? _events;
   Timer? _syncDebounce;
 
+  static int _externalDepth = 0;
+  static Timer? _externalGrace;
+
+  /// True while a system picker or another app holds the screen, so resume must not jump home.
+  static bool get inExternalFlow => _externalDepth > 0 || (_externalGrace?.isActive ?? false);
+
+  /// Runs an activity that takes the screen away (a system picker). The launcher stays put on
+  /// resume while it runs and for a short grace period after it returns.
+  static Future<T> externalFlow<T>(Future<T> Function() run) async {
+    _externalDepth++;
+    _externalGrace?.cancel();
+    try {
+      return await run();
+    } finally {
+      _externalDepth--;
+      _externalGrace = Timer(const Duration(seconds: 2), () {});
+    }
+  }
+
   static Future<Flute> create() async {
     final prefs = await SharedPreferences.getInstance();
     final engine = await CategoryEngine.load(
@@ -87,8 +156,29 @@ class Flute {
     final providers = ProviderStore(prefs: prefs, secrets: SecureSecretStore());
     final mcp = McpManager(prefs: prefs, secrets: SecureSecretStore());
     final skills = await SkillManager.open();
-    final builtins = BuiltinTools(prefs: prefs);
-    final flute = Flute._(prefs, repo, modes, weather, providers, mcp, skills, builtins);
+    final lockSettings = LockSettings(prefs);
+    final pets = PetSettings(prefs);
+    final builtins = BuiltinTools(prefs: prefs, modes: modes, apps: repo, lock: lockSettings, pets: pets);
+    final web = WebSettings(prefs: prefs, secrets: SecureSecretStore());
+    final routineNative = RoutineNative();
+    final routines = RoutineStore(prefs: prefs, native: routineNative);
+    final flute = Flute._(
+      prefs: prefs,
+      repo: repo,
+      modes: modes,
+      weather: weather,
+      providers: providers,
+      mcp: mcp,
+      skills: skills,
+      builtins: builtins,
+      lockSettings: lockSettings,
+      pets: pets,
+      web: web,
+      routines: routines,
+      voice: VoiceController(engine: NativeVoiceEngine(), prefs: prefs),
+      sandbox: SandboxManager(prefs: prefs, secrets: SecureSecretStore()),
+      routineNative: routineNative,
+    );
     await flute._start();
     return flute;
   }
@@ -105,9 +195,13 @@ class Flute {
       providers.load(),
       mcp.load(),
       skills.load(),
+      web.load(),
+      routines.load(),
+      sandbox.load(),
     ]);
     unawaited(PetLibrary.open().then((l) => petLibrary.value = l, onError: (Object _) {}));
     unawaited(mcp.connectEnabled());
+    unawaited(routineRunner.start());
     unawaited(icons.ensure(repo.favoritePackages));
     repo.addListener(() => unawaited(icons.ensure(repo.favoritePackages)));
     _lastApps = _lastUsage = DateTime.now();
@@ -178,6 +272,11 @@ class Flute {
     modes.dispose();
     style.dispose();
     agent.dispose();
+    routineRunner.dispose();
+    voice.dispose();
+    unawaited(sandbox.shutdown());
+    sandbox.dispose();
+    web.dispose();
     confirm.dispose();
     mcp.dispose();
     providers.dispose();

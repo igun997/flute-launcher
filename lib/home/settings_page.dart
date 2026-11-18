@@ -34,7 +34,7 @@ class SettingsPage extends StatelessWidget {
         title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w300)),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
+        padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.paddingOf(context).bottom + 24),
         children: [
           const _Label('SETUP'),
           ListenableBuilder(

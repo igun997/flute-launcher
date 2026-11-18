@@ -64,4 +64,22 @@ final assignRustSignal = <String, void Function(Uint8List, Uint8List)>{
     _sseDeltaStreamController.add(rustSignal);
     SseDelta.latestRustSignal = rustSignal;
   },
+  'WasmLoadResponse': (Uint8List messageBytes, Uint8List binary) {
+    final message = WasmLoadResponse.bincodeDeserialize(messageBytes);
+    final rustSignal = RustSignalPack(
+      message,
+      binary,
+    );
+    _wasmLoadResponseStreamController.add(rustSignal);
+    WasmLoadResponse.latestRustSignal = rustSignal;
+  },
+  'WasmRunResponse': (Uint8List messageBytes, Uint8List binary) {
+    final message = WasmRunResponse.bincodeDeserialize(messageBytes);
+    final rustSignal = RustSignalPack(
+      message,
+      binary,
+    );
+    _wasmRunResponseStreamController.add(rustSignal);
+    WasmRunResponse.latestRustSignal = rustSignal;
+  },
 };

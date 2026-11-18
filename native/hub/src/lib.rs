@@ -2,6 +2,7 @@
 
 mod jobs;
 mod signals;
+mod wasm;
 
 use rinf::{dart_shutdown, write_interface};
 
@@ -11,6 +12,7 @@ write_interface!();
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
   jobs::start();
+  wasm::start();
   // Keep running until Dart shuts the runtime down.
   dart_shutdown().await;
 }

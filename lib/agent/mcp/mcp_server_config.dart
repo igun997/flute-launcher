@@ -1,6 +1,6 @@
 /// How a remote MCP server expects to be authenticated. The secret itself lives in the
 /// [SecretStore], never in this config.
-enum McpAuthKind { none, bearer, basic, header }
+enum McpAuthKind { none, bearer, basic, header, oauth }
 
 class McpServerConfig {
   const McpServerConfig({
@@ -73,7 +73,7 @@ class McpServerConfig {
         id: j['id'] as String,
         name: j['name'] as String,
         url: j['url'] as String,
-        auth: McpAuthKind.values.byName(j['auth'] as String),
+        auth: McpAuthKind.values.asNameMap()[j['auth']] ?? McpAuthKind.none,
         headerName: j['headerName'] as String?,
         enabled: (j['enabled'] as bool?) ?? true,
         readOnly: (j['readOnly'] as bool?) ?? false,

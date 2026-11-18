@@ -272,6 +272,66 @@ void main() {
     expect(r.items.last, isA<NoticeItem>());
   });
 
+  test('a reply reports tokens per second from the provider usage and the clock', () async {
+    await ready();
+    var t = DateTime(2026, 11, 20, 14, 0, 0);
+    final client = FakeClient([
+      () async* {
+        t = t.add(const Duration(milliseconds: 800)); // time to first token
+        yield const TextDelta('Hello');
+        t = t.add(const Duration(seconds: 4));
+        yield const TextDelta(' world');
+        yield const LlmFinished(
+          reason: FinishReason.stop,
+          usage: Usage(inputTokens: 12, outputTokens: 200),
+        );
+      },
+    ]);
+    final r = AgentRuntime(
+      providers: providers,
+      toolSources: const [],
+      skills: skills,
+      confirmer: ScriptConfirmer([]),
+      clientFactory: (_) => client,
+      clock: () => t,
+    );
+    addTearDown(r.dispose);
+    await r.send('Hi');
+    final a = r.items.whereType<AssistantItem>().single;
+    expect(a.tokensEstimated, isFalse);
+    expect(a.shownOutputTokens, 200);
+    expect(a.timeToFirstToken, const Duration(milliseconds: 800));
+    expect(a.tokensPerSecond(t), closeTo(50, 0.5)); // 200 tokens over the 4 s after the first one
+  });
+
+  test('without provider usage the count is estimated from characters', () async {
+    await ready();
+    final client = FakeClient([() => reply('12345678')]);
+    final r = runtime(client, const [], ScriptConfirmer([]));
+    await r.send('Hi');
+    final a = r.items.whereType<AssistantItem>().single;
+    expect(a.tokensEstimated, isTrue);
+    expect(a.shownOutputTokens, 2);
+  });
+
+  test('onRunEnd runs after every message, also when the model failed', () async {
+    await ready();
+    var ended = 0;
+    final client = FakeClient([() => Stream.error(const LlmException('down')), () => reply('ok')]);
+    final r = AgentRuntime(
+      providers: providers,
+      toolSources: const [],
+      skills: skills,
+      confirmer: ScriptConfirmer([]),
+      clientFactory: (_) => client,
+      onRunEnd: () async => ended++,
+    );
+    addTearDown(r.dispose);
+    await r.send('one');
+    await r.send('two');
+    expect(ended, 2);
+  });
+
   test('new chat forgets the conversation and calls the reset hook', () async {
     await ready();
     var resets = 0;

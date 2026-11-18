@@ -19,6 +19,8 @@ object FluteEngine {
         val engine = FlutterEngine(appContext)
         // Handlers go up before the Dart entrypoint runs, so early calls from Dart are answered.
         FluteNative(appContext).register(engine.dartExecutor.binaryMessenger)
+        RoutineNative(appContext).register(engine.dartExecutor.binaryMessenger)
+        VoiceNative.register(engine.dartExecutor.binaryMessenger, appContext)
         engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
         FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
         return engine

@@ -47,6 +47,8 @@ class RustCore {
     _listen<ModelIndexReady>(ModelIndexReady.rustSignalStream, (m) => m.id);
     _listen<ModelSearchResponse>(ModelSearchResponse.rustSignalStream, (m) => m.id);
     _listen<CategorizeResponse>(CategorizeResponse.rustSignalStream, (m) => m.id);
+    _listen<WasmLoadResponse>(WasmLoadResponse.rustSignalStream, (m) => m.id);
+    _listen<WasmRunResponse>(WasmRunResponse.rustSignalStream, (m) => m.id);
     _subscriptions.add(ArchiveResponse.rustSignalStream.listen((pack) {
       _pending.remove(pack.message.id)?.complete(pack);
     }));
@@ -142,6 +144,36 @@ class RustCore {
       () => CategorizeRequest(id: id, apps: [for (final (p, l) in apps) AppRow(package: p, label: l)]).sendSignalToRust(),
     );
     return r.rules;
+  }
+
+  /// Loads the WASI module [wasmRun] executes, replacing any loaded before. Resolves with how long Rust took to compile it.
+  Future<int> wasmLoad(Uint8List module) async {
+    final id = _nextId++;
+    final r = await _call<WasmLoadResponse>(id, () => WasmLoadRequest(id: id).sendSignalToRust(module));
+    if (r.error.isNotEmpty) throw RustException(r.error);
+    return r.elapsedMs;
+  }
+
+  /// Runs the loaded module in a fresh instance. The response carries its own `error` (empty on success) and exit code.
+  Future<WasmRunResponse> wasmRun({
+    required List<String> argv,
+    required List<String> env,
+    required String stdin,
+    required int timeoutMs,
+    required int maxMemoryMb,
+  }) {
+    final id = _nextId++;
+    return _call<WasmRunResponse>(
+      id,
+      () => WasmRunRequest(
+        id: id,
+        argv: argv,
+        env: env,
+        stdin: stdin,
+        timeoutMs: timeoutMs,
+        maxMemoryMb: maxMemoryMb,
+      ).sendSignalToRust(),
+    );
   }
 
   void dispose() {

@@ -2,6 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_launcher/agent/tools/agent_tool.dart';
+import 'package:focus_launcher/core/app_repository.dart';
+import 'package:focus_launcher/core/category_engine.dart';
+import 'package:focus_launcher/core/mode_engine.dart';
+import 'package:focus_launcher/lock/lock_settings.dart';
+import 'package:focus_launcher/pets/pet_settings.dart';
 import 'package:focus_launcher/agent/tools/builtin_tools.dart';
 import 'package:focus_launcher/agent/tools/notes_store.dart';
 import 'package:focus_launcher/agent/tools/time_tools.dart';
@@ -9,7 +14,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fakes.dart';
 
-List<String> _namesOf(List<AgentTool> tools) => [for (final t in tools) t.name];
+/// Tool names without the launcher group, which has its own tests.
+List<String> _namesOf(List<AgentTool> tools) => [for (final t in tools) if (!t.name.startsWith('launcher_')) t.name];
 
 void main() {
   late Directory dir;
@@ -20,6 +26,10 @@ void main() {
 
   BuiltinTools openBuiltins() => BuiltinTools(
     prefs: prefs,
+    modes: ModeEngine(prefs),
+    apps: AppRepository(prefs, CategoryEngine({})),
+    lock: LockSettings(prefs),
+    pets: PetSettings(prefs),
     notes: NotesStore(file: File('${dir.path}/notes.json')),
     calendar: calendar,
     contacts: contacts,

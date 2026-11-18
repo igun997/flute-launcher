@@ -2,6 +2,7 @@ package id.nst.focus_launcher
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import java.lang.ref.WeakReference
@@ -12,6 +13,7 @@ class MainActivity : FlutterActivity() {
         // FlutterActivity looks the cached engine up in onCreate, so it must exist first.
         FluteEngine.get(this)
         super.onCreate(savedInstanceState)
+        RoutineNative.noteOpenIntent(intent)
     }
 
     override fun getCachedEngineId(): String = FluteEngine.ENGINE_ID
@@ -56,6 +58,9 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         // A permission dialog cannot answer a destroyed activity; settle its pending reply.
         LocationAccess.abandonPermissionRequest()
+        VoiceNative.abandonPermissionRequest()
+        RoutineNative.abandonPermissionRequest()
+        VoiceNative.release()
         super.onDestroy()
     }
 
@@ -72,11 +77,16 @@ class MainActivity : FlutterActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == LocationAccess.REQUEST_CODE) LocationAccess.onPermissionResult(grantResults)
+        if (requestCode == VoiceNative.PERMISSION_REQUEST_CODE) VoiceNative.onPermissionResult(grantResults)
+        if (requestCode == RoutineNative.PERMISSION_REQUEST_CODE) {
+            RoutineNative.onPermissionResult(grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
+        }
     }
 
     // singleTask: pressing Home while Flute is already running lands here.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        RoutineNative.noteOpenIntent(intent)
         if (intent.isHomeIntent()) {
             FluteEvents.emit(mapOf("type" to "homePressed"))
         }
@@ -102,6 +112,23 @@ class MainActivity : FlutterActivity() {
                 arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION),
                 LocationAccess.REQUEST_CODE,
             )
+            return true
+        }
+
+        /** Shows the system dialog for the microphone from the started launcher. Main thread only. */
+        fun requestMicrophone(): Boolean {
+            val activity = started?.get() ?: return false
+            activity.requestPermissions(
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                VoiceNative.PERMISSION_REQUEST_CODE,
+            )
+            return true
+        }
+
+        /** Shows the system dialog for [permission] from the started launcher. Main thread only. */
+        fun requestRuntimePermission(permission: String, requestCode: Int): Boolean {
+            val activity = started?.get() ?: return false
+            activity.requestPermissions(arrayOf(permission), requestCode)
             return true
         }
     }

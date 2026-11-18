@@ -129,3 +129,40 @@ pub struct CategorizeResponse {
   pub id: u32,
   pub rules: Vec<u8>,
 }
+
+/// A WASI module (the Python runtime) Dart downloaded, sent as the binary payload.
+#[derive(Deserialize, DartSignalBinary)]
+pub struct WasmLoadRequest {
+  pub id: u32,
+}
+
+/// `error` is empty on success. `elapsed_ms` is how long compiling the module took.
+#[derive(Serialize, RustSignal)]
+pub struct WasmLoadResponse {
+  pub id: u32,
+  pub error: String,
+  pub elapsed_ms: u32,
+}
+
+/// Runs the loaded module's `_start` with the given arguments, environment and stdin.
+/// Each env entry is `KEY=VALUE`. The timeout and memory cap are clamped on the Rust side.
+#[derive(Deserialize, DartSignal)]
+pub struct WasmRunRequest {
+  pub id: u32,
+  pub argv: Vec<String>,
+  pub env: Vec<String>,
+  pub stdin: String,
+  pub timeout_ms: u32,
+  pub max_memory_mb: u32,
+}
+
+/// Captured output is capped at 1 MiB per stream. `error` is empty unless the run could not
+/// finish normally (for example a time limit, or the module failed to instantiate).
+#[derive(Serialize, RustSignal)]
+pub struct WasmRunResponse {
+  pub id: u32,
+  pub exit_code: i32,
+  pub stdout: String,
+  pub stderr: String,
+  pub error: String,
+}

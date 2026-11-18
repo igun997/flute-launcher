@@ -6,14 +6,16 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/flute.dart';
 import '../../app/theme.dart';
 import '../mcp/mcp_manager.dart';
+import '../mcp/mcp_oauth.dart';
 import '../tools/agent_tool.dart';
 import 'settings_widgets.dart';
 
 const _authLabels = {
   McpAuthKind.none: 'None',
   McpAuthKind.bearer: 'Bearer token',
-  McpAuthKind.basic: 'Username and password',
+  McpAuthKind.basic: 'Username and API token',
   McpAuthKind.header: 'Custom header',
+  McpAuthKind.oauth: 'Browser sign-in',
 };
 
 Color _statusColor(McpStatus status) => switch (status) {
@@ -21,6 +23,7 @@ Color _statusColor(McpStatus status) => switch (status) {
       McpStatus.connecting => FluteColors.warn,
       McpStatus.failed => settingsAlert,
       McpStatus.disconnected => FluteColors.muted,
+      McpStatus.needsSignIn => FluteColors.warn,
     };
 
 String _toolCount(int n) => n == 1 ? '1 tool' : '$n tools';
@@ -32,6 +35,7 @@ String _statusText(McpManager mcp, McpServerConfig server) {
     McpStatus.connecting => 'Connecting...',
     McpStatus.failed => mcp.errorOf(server.id) ?? 'Could not connect.',
     McpStatus.disconnected => 'Not connected',
+    McpStatus.needsSignIn => mcp.errorOf(server.id) ?? 'Sign in to use this server.',
   };
 }
 
@@ -239,6 +243,39 @@ class _McpServerPageState extends State<McpServerPage> {
     );
   }
 
+  List<Widget> _signInActions(McpServerConfig server, McpStatus status, bool connecting) {
+    if (_mcp.isSigningIn(server.id)) {
+      return [
+        const Text('Waiting for the browser. Finish signing in there, then come back.', style: settingsMuted),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          onPressed: () => _mcp.cancelSignIn(server.id),
+          child: const Text('Cancel sign-in'),
+        ),
+        const SizedBox(height: 12),
+      ];
+    }
+    final signedIn = status == McpStatus.connected || status == McpStatus.failed;
+    return [
+      Row(
+        children: [
+          FilledButton(
+            onPressed: connecting || !server.enabled ? null : () => _run(() => _mcp.signIn(server.id)),
+            child: Text(signedIn ? 'Sign in again' : 'Sign in with browser'),
+          ),
+          if (signedIn) ...[
+            const SizedBox(width: 12),
+            TextButton(
+              onPressed: connecting ? null : () => _run(() => _mcp.signOut(server.id)),
+              child: const Text('Sign out'),
+            ),
+          ],
+        ],
+      ),
+      const SizedBox(height: 12),
+    ];
+  }
+
   Widget _details(McpServerConfig server) {
     final status = _mcp.statusOf(server.id);
     final tools = _mcp.toolsOf(server.id);
@@ -258,18 +295,20 @@ class _McpServerPageState extends State<McpServerPage> {
         ),
         const SizedBox(height: 12),
         if (error != null) ErrorLine(error),
-        Row(
-          children: [
-            OutlinedButton(
-              onPressed: connecting || !server.enabled ? null : () => _run(() => _mcp.connect(server.id)),
-              child: Text(status == McpStatus.connected ? 'Reconnect' : 'Connect'),
-            ),
-            if (connecting) ...[
-              const SizedBox(width: 12),
-              const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+        if (server.auth == McpAuthKind.oauth) ..._signInActions(server, status, connecting),
+        if (server.auth != McpAuthKind.oauth || status != McpStatus.needsSignIn)
+          Row(
+            children: [
+              OutlinedButton(
+                onPressed: connecting || !server.enabled ? null : () => _run(() => _mcp.connect(server.id)),
+                child: Text(status == McpStatus.connected ? 'Reconnect' : 'Connect'),
+              ),
+              if (connecting) ...[
+                const SizedBox(width: 12),
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+              ],
             ],
-          ],
-        ),
+          ),
         const SizedBox(height: 8),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -401,15 +440,15 @@ class _SecretFields {
   /// The value stored as the server's secret. Null when nothing was typed and [required] is false
   /// (edit keeps the saved secret). [preset] builds Jira-style basic auth through [McpPresets.jiraBasic].
   String? build(McpAuthKind auth, {required bool required, bool preset = false}) {
-    if (auth == McpAuthKind.none) return null;
+    if (auth == McpAuthKind.none || auth == McpAuthKind.oauth) return null;
     if (auth == McpAuthKind.basic) {
       final u = user.text.trim();
       final p = token.text.trim();
       if (u.isEmpty && p.isEmpty) {
-        if (required) throw const FormatException('Enter the username and the password.');
+        if (required) throw const FormatException('Enter the username and the API token.');
         return null;
       }
-      if (u.isEmpty || p.isEmpty) throw const FormatException('Enter both the username and the password.');
+      if (u.isEmpty || p.isEmpty) throw const FormatException('Enter both the username and the API token.');
       return preset ? McpPresets.jiraBasic(u, p) : base64Encode(utf8.encode('$u:$p'));
     }
     final value = token.text.trim();
@@ -429,7 +468,7 @@ class _SecretFields {
     required bool keepSavedHint,
   }) {
     final hint = keepSavedHint ? 'Leave blank to keep the saved one' : null;
-    if (auth == McpAuthKind.none) return const [];
+    if (auth == McpAuthKind.none || auth == McpAuthKind.oauth) return const [];
     final secret = TextField(
       controller: token,
       obscureText: true,
@@ -456,8 +495,9 @@ class _SecretFields {
 String _tokenLabel(McpAuthKind auth) => switch (auth) {
       McpAuthKind.none => '',
       McpAuthKind.bearer => 'Token',
-      McpAuthKind.basic => 'Password or API token',
+      McpAuthKind.basic => 'API token',
       McpAuthKind.header => 'Header value',
+      McpAuthKind.oauth => '',
     };
 
 /// The form for a preset (name and URL fixed) or a custom server.
@@ -471,12 +511,31 @@ class _McpServerForm extends StatefulWidget {
 }
 
 class _McpServerFormState extends State<_McpServerForm> {
+  static const _manualAuths = [McpAuthKind.bearer, McpAuthKind.basic, McpAuthKind.header];
+
   final _name = TextEditingController();
   final _url = TextEditingController();
   final _secret = _SecretFields();
-  late McpAuthKind _auth = widget.preset?.auth ?? McpAuthKind.bearer;
+  // Token auth: chosen by hand for a custom server, or the token fallback for a preset.
+  late McpAuthKind _auth = widget.preset?.tokenAuth ?? McpAuthKind.bearer;
+  // Custom server: the probe found a browser sign-in.
+  bool _oauth = false;
+  // Custom server: the probe could not tell how to sign in, or the user chose a token.
+  bool _manual = false;
+  // The server created for a sign-in. Kept so a retry reuses it.
+  McpServerConfig? _saved;
   bool _busy = false;
   String? _error;
+
+  bool get _decided => _oauth || _manual;
+
+  bool get _signInFirst {
+    if (_manual) return false;
+    final preset = widget.preset;
+    return preset != null ? preset.auth == McpAuthKind.oauth : _oauth;
+  }
+
+  bool get _showSecrets => widget.preset != null ? !_signInFirst : _manual;
 
   @override
   void dispose() {
@@ -499,6 +558,72 @@ class _McpServerFormState extends State<_McpServerForm> {
     }
   }
 
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) setState(() => _error = readableError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _finish(String id) async {
+    final mcp = widget.flute.mcp;
+    if (mcp.statusOf(id) != McpStatus.connected) await mcp.connect(id);
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  // Custom servers: the probe decides whether to save with no auth, offer browser sign-in, or ask for a token.
+  Future<void> _connect() async {
+    final name = _name.text.trim();
+    final url = _url.text.trim();
+    if (name.isEmpty || url.isEmpty) {
+      setState(() => _error = 'Enter a name and the server URL.');
+      return;
+    }
+    await _run(() async {
+      final mcp = widget.flute.mcp;
+      final probe = await mcp.probe(url);
+      switch (probe.outcome) {
+        case McpProbeOutcome.noAuth:
+          final server = await mcp.add(name: name, url: url);
+          await _finish(server.id);
+        case McpProbeOutcome.oauth:
+          setState(() => _oauth = true);
+        case McpProbeOutcome.askUser:
+          setState(() {
+            _manual = true;
+            _error = probe.message;
+          });
+      }
+    });
+  }
+
+  Future<McpServerConfig> _createForSignIn() {
+    final preset = widget.preset;
+    final mcp = widget.flute.mcp;
+    if (preset != null) return mcp.addPreset(preset);
+    return mcp.add(name: _name.text.trim(), url: _url.text.trim(), auth: McpAuthKind.oauth);
+  }
+
+  Future<void> _signIn() => _run(() async {
+        final mcp = widget.flute.mcp;
+        final server = _saved ?? await _createForSignIn();
+        setState(() => _saved = server);
+        await mcp.signIn(server.id);
+        if (mounted) Navigator.of(context).pop(true);
+      });
+
+  void _cancelSignIn() {
+    final id = _saved?.id;
+    if (id != null) widget.flute.mcp.cancelSignIn(id);
+  }
+
   Future<void> _save() async {
     final preset = widget.preset;
     final name = preset?.title ?? _name.text.trim();
@@ -512,12 +637,8 @@ class _McpServerFormState extends State<_McpServerForm> {
       setState(() => _error = 'Enter the header name, for example X-API-Key.');
       return;
     }
-    final mcp = widget.flute.mcp;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
+    await _run(() async {
+      final mcp = widget.flute.mcp;
       final secret = _secret.build(_auth, required: true, preset: preset != null);
       final McpServerConfig server;
       if (preset != null) {
@@ -531,16 +652,8 @@ class _McpServerFormState extends State<_McpServerForm> {
           secret: secret,
         );
       }
-      if (mcp.statusOf(server.id) != McpStatus.connected) await mcp.connect(server.id);
-      if (mounted) Navigator.of(context).pop(true);
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _error = readableError(e);
-        });
-      }
-    }
+      await _finish(server.id);
+    });
   }
 
   @override
@@ -576,53 +689,84 @@ class _McpServerFormState extends State<_McpServerForm> {
             const SizedBox(height: 16),
             TextField(
               controller: _name,
+              enabled: !_decided,
               decoration: const InputDecoration(labelText: 'Name', hintText: 'Notion'),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _url,
+              enabled: !_decided,
               keyboardType: TextInputType.url,
               autocorrect: false,
               enableSuggestions: false,
               decoration: const InputDecoration(labelText: 'Server URL', hintText: 'https://mcp.example.com/mcp'),
             ),
-            const SizedBox(height: 16),
-            const SettingsLabel('AUTHENTICATION'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final auth in McpAuthKind.values)
-                  ChoiceChip(
-                    label: Text(_authLabels[auth] ?? auth.name),
-                    selected: _auth == auth,
-                    onSelected: _busy ? null : (_) => setState(() => _auth = auth),
-                  ),
-              ],
+          ],
+          const SizedBox(height: 16),
+          if (preset == null && !_decided)
+            FilledButton(
+              onPressed: _busy ? null : _connect,
+              child: const Text('Connect'),
+            ),
+          if (_signInFirst) ...[
+            const Text(
+              'Flute opens your browser so you can sign in. The access stays in this phone\'s secure storage.',
+              style: settingsMuted,
             ),
             const SizedBox(height: 12),
-            if (_auth == McpAuthKind.header)
-              TextField(
-                controller: _secret.header,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: const InputDecoration(labelText: 'Header name', hintText: 'X-API-Key'),
+            FilledButton.icon(
+              onPressed: _busy ? null : _signIn,
+              icon: const Icon(Icons.login),
+              label: const Text('Sign in with browser'),
+            ),
+            if (_busy && _saved != null)
+              TextButton(onPressed: _cancelSignIn, child: const Text('Cancel sign-in')),
+            if (_saved == null)
+              TextButton(
+                onPressed: _busy ? null : () => setState(() => _manual = true),
+                child: const Text('Use a token instead'),
               ),
           ],
-          if (preset == null && _auth == McpAuthKind.header) const SizedBox(height: 12),
-          ..._secret.fields(
-            _auth,
-            tokenLabel: preset?.secretLabel ?? _tokenLabel(_auth),
-            userLabel: preset != null ? 'Email' : 'Username',
-            keepSavedHint: false,
-          ),
+          if (_showSecrets) ...[
+            if (preset == null) ...[
+              const SettingsLabel('AUTHENTICATION'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final auth in _manualAuths)
+                    ChoiceChip(
+                      label: Text(_authLabels[auth] ?? auth.name),
+                      selected: _auth == auth,
+                      onSelected: _busy ? null : (_) => setState(() => _auth = auth),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_auth == McpAuthKind.header)
+                TextField(
+                  controller: _secret.header,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(labelText: 'Header name', hintText: 'X-API-Key'),
+                ),
+            ],
+            const SizedBox(height: 12),
+            ..._secret.fields(
+              _auth,
+              tokenLabel: preset?.secretLabel ?? _tokenLabel(_auth),
+              userLabel: preset != null ? 'Email' : 'Username',
+              keepSavedHint: false,
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _busy ? null : _save,
+              child: const Text('Add server'),
+            ),
+          ],
           const SizedBox(height: 16),
-          if (_busy) const ProgressLine('Adding and connecting...'),
+          if (_busy) ProgressLine(_saved != null ? 'Waiting for the browser...' : 'Working...'),
           if (_error != null) ErrorLine(_error!),
-          FilledButton(
-            onPressed: _busy ? null : _save,
-            child: const Text('Add server'),
-          ),
         ],
       ),
     );
@@ -696,7 +840,7 @@ class _EditServerSheetState extends State<_EditServerSheet> {
           enableSuggestions: false,
           decoration: const InputDecoration(labelText: 'Server URL'),
         ),
-        if (auth != McpAuthKind.none) ...[
+        if (auth != McpAuthKind.none && auth != McpAuthKind.oauth) ...[
           const SizedBox(height: 12),
           ..._secret.fields(
             auth,

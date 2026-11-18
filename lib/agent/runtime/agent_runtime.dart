@@ -41,6 +41,38 @@ class AssistantItem extends ChatItem {
   String reasoning;
   bool streaming;
   String? error;
+
+  /// When the request was sent, when the first piece of text arrived, and when the turn ended.
+  DateTime? startedAt;
+  DateTime? firstTokenAt;
+  DateTime? endedAt;
+
+  /// Tokens the provider reported for this turn; null when it did not report any.
+  int? inputTokens;
+  int? outputTokens;
+
+  /// Characters received so far (text and reasoning): the basis of the live estimate.
+  int receivedChars = 0;
+
+  /// Rough tokens from characters (about 4 per token), used until the provider reports real usage.
+  int get estimatedOutputTokens => (receivedChars / 4).ceil();
+  int get shownOutputTokens => outputTokens ?? estimatedOutputTokens;
+  bool get tokensEstimated => outputTokens == null;
+
+  /// Time from request to first text (the wait before anything appears).
+  Duration? get timeToFirstToken => (startedAt != null && firstTokenAt != null) ? firstTokenAt!.difference(startedAt!) : null;
+
+  /// Total time so far, or for the whole turn once it ended.
+  Duration? elapsed(DateTime now) => startedAt == null ? null : (endedAt ?? now).difference(startedAt!);
+
+  /// Output tokens per second while text is flowing (after the first token). Null until measurable.
+  double? tokensPerSecond(DateTime now) {
+    final first = firstTokenAt;
+    if (first == null) return null;
+    final seconds = (endedAt ?? now).difference(first).inMicroseconds / 1e6;
+    if (seconds < 0.25) return null;
+    return shownOutputTokens / seconds;
+  }
 }
 
 class ToolItem extends ChatItem {
@@ -74,6 +106,7 @@ class AgentRuntime extends ChangeNotifier {
     this.confirmPersonalReads = true,
     this.maxRounds = 12,
     this.onNewChat,
+    this.onRunEnd,
   })  : _clientFactory = clientFactory,
         _prep = prep ?? AttachmentPrep(),
         _clock = clock ?? DateTime.now {
@@ -90,6 +123,10 @@ class AgentRuntime extends ChangeNotifier {
 
   /// Reading the calendar, contacts or notes asks once per chat, like writing does.
   final bool confirmPersonalReads;
+
+  /// Called when a message has been fully handled (reply done, cancelled or failed), e.g. to shut
+  /// the sandbox down so nothing keeps running or billing.
+  final Future<void> Function()? onRunEnd;
 
   /// Called by [newChat], e.g. to forget "allow for this chat" answers.
   final VoidCallback? onNewChat;
@@ -185,6 +222,14 @@ class AgentRuntime extends ChangeNotifier {
       _sub = null;
       _streamDone = null;
       notifyListeners();
+      final end = onRunEnd;
+      if (end != null) {
+        try {
+          await end();
+        } catch (_) {
+          // Cleanup reports its own failures; it must never break the chat.
+        }
+      }
     }
   }
 
@@ -248,7 +293,6 @@ class AgentRuntime extends ChangeNotifier {
     try {
       for (var round = 0; round < maxRounds; round++) {
         final tools = _toolMap();
-        final assistant = AssistantItem(id: _id());
         final assistant = AssistantItem(id: _id())..startedAt = _clock();
         _items.add(assistant);
         notifyListeners();
@@ -262,6 +306,10 @@ class AgentRuntime extends ChangeNotifier {
 
         final finished = await _consume(client.stream(request), assistant);
         assistant.streaming = false;
+        assistant.endedAt = _clock();
+        final usage = finished?.usage;
+        assistant.inputTokens = usage?.inputTokens;
+        assistant.outputTokens = usage?.outputTokens;
         if (_cancelled) {
           notifyListeners();
           return;
@@ -310,8 +358,12 @@ class AgentRuntime extends ChangeNotifier {
         switch (e) {
           case TextDelta():
             assistant.text += e.text;
+            assistant.receivedChars += e.text.length;
+            assistant.firstTokenAt ??= _clock();
           case ReasoningDelta():
             assistant.reasoning += e.text;
+            assistant.receivedChars += e.text.length;
+            assistant.firstTokenAt ??= _clock();
           case LlmFinished():
             finished = e;
         }

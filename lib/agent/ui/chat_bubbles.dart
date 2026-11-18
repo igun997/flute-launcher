@@ -34,6 +34,7 @@ IconData toolSourceIcon(String source) {
     'notes' => Icons.sticky_note_2_outlined,
     'time' => Icons.schedule,
     'skills' => Icons.auto_awesome_outlined,
+    'web' => Icons.public,
     _ => Icons.build_outlined,
   };
 }
@@ -46,6 +47,7 @@ String toolSourceLabel(String source) {
     'notes' => 'Notes',
     'time' => 'Time',
     'skills' => 'Skill',
+    'web' => 'Web',
     _ => source,
   };
 }

@@ -10,6 +10,7 @@ class McpPreset {
     required this.description,
     required this.url,
     required this.auth,
+    required this.tokenAuth,
     required this.secretLabel,
     required this.helpUrl,
     this.headers = const {},
@@ -19,7 +20,11 @@ class McpPreset {
   final String title;
   final String description;
   final String url;
+  /// The method used when the person signs in with the browser.
   final McpAuthKind auth;
+
+  /// How a pasted token is sent, used when the person chooses a token instead.
+  final McpAuthKind tokenAuth;
 
   /// What the token field asks for, e.g. "Personal access token".
   final String secretLabel;
@@ -35,7 +40,8 @@ class McpPresets {
     title: 'GitHub',
     description: 'Repositories, issues, pull requests and code search.',
     url: 'https://api.githubcopilot.com/mcp/',
-    auth: McpAuthKind.bearer,
+    auth: McpAuthKind.oauth,
+    tokenAuth: McpAuthKind.bearer,
     secretLabel: 'Personal access token',
     helpUrl: 'https://github.com/settings/personal-access-tokens',
   );
@@ -45,7 +51,8 @@ class McpPresets {
     title: 'Jira and Confluence',
     description: 'Issues, projects and pages in Atlassian Cloud. Needs an API token.',
     url: 'https://mcp.atlassian.com/v2/mcp',
-    auth: McpAuthKind.basic,
+    auth: McpAuthKind.oauth,
+    tokenAuth: McpAuthKind.basic,
     secretLabel: 'Email and API token',
     helpUrl: 'https://id.atlassian.com/manage-profile/security/api-tokens',
   );

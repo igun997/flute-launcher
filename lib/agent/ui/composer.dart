@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../app/flute.dart';
 import '../../app/theme.dart';
 import '../runtime/agent_runtime.dart';
 import 'chat_bubbles.dart';
@@ -117,19 +118,21 @@ class _ComposerState extends State<Composer> {
   }
 
   Future<List<Attachment>> _image(ImageSource source) async {
-    final file = await ImagePicker().pickImage(source: source, maxWidth: 1600, imageQuality: 85);
+    final file = await Flute.externalFlow(
+      () => ImagePicker().pickImage(source: source, maxWidth: 1600, imageQuality: 85),
+    );
     if (file == null) return const [];
     return [Attachment(kind: AttachmentKind.image, path: file.path, name: file.name)];
   }
 
   Future<List<Attachment>> _video() async {
-    final file = await ImagePicker().pickVideo(source: ImageSource.gallery);
+    final file = await Flute.externalFlow(() => ImagePicker().pickVideo(source: ImageSource.gallery));
     if (file == null) return const [];
     return [Attachment(kind: AttachmentKind.video, path: file.path, name: file.name)];
   }
 
   Future<List<Attachment>> _files() async {
-    final picked = await FilePicker.pickFiles();
+    final picked = await Flute.externalFlow(() => FilePicker.pickFiles());
     return [
       for (final file in picked)
         if (file.path != null) Attachment(kind: AttachmentKind.file, path: file.path!, name: file.name),
