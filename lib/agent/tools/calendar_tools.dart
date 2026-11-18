@@ -113,16 +113,20 @@ class CalendarListEventsTool extends _CalendarTool {
 
   @override
   String get description =>
-      'List events overlapping a time range, earliest first. "from" defaults to the start of today; '
-      '"to" is exclusive and defaults to 7 days after "from". A date without a time means midnight. '
-      'Returns the id each event needs for calendar_update_event and calendar_delete_event.';
+      'List calendar events overlapping a time range, earliest first. "from" defaults to the start '
+      'of today and "to" to 7 days after "from". Ranges over 366 days are cut. Returns the id each '
+      'event needs for calendar_update_event and calendar_delete_event.';
 
   @override
   Map<String, dynamic> get parameters => objectSchema({
-    'from': stringProp('Local ISO 8601 start, e.g. 2026-11-20T00:00 or 2026-11-20.'),
-    'to': stringProp('Local ISO 8601 end, exclusive.'),
+    'from': stringProp(
+      'Local start: ISO 8601 such as 2026-11-20T09:00, or a date such as 2026-11-20. Default today.',
+    ),
+    'to': stringProp(
+      'Local end: ISO 8601 date-time, or a date (the whole day is included). Default 7 days after from.',
+    ),
     'calendarId': stringProp('Only this calendar (an id from calendar_list_calendars).'),
-    'limit': intProp('How many events to list (default 25, max 100).'),
+    'limit': intProp('How many events to list (default 50, max 200).'),
   });
 
   @override
@@ -134,8 +138,20 @@ class CalendarListEventsTool extends _CalendarTool {
   @override
   Future<ToolResult> perform(Map<String, dynamic> args) async {
     final from = optionalWhen(args, 'from') ?? dayStart(_now());
-    final to = optionalWhen(args, 'to') ?? addDays(from, 7);
+    final toText = argString(args, 'to') ?? '';
+    final typedTo = optionalWhen(args, 'to');
+    var to = typedTo == null ? addDays(from, 7) : typedTo;
+    // A plain date means that whole day, so "to" is inclusive.
+    if (typedTo != null && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(toText)) {
+      to = addDays(typedTo, 1);
+    }
     if (to.isBefore(from)) throw const ToolError('to must be after from.');
+    final latest = addDays(from, 366);
+    final clamped = to.isAfter(latest);
+    if (clamped) to = latest;
+    final clampNote = clamped
+        ? '\nThe range is longer than 366 days, so it was cut to ${isoLocal(to)}.'
+        : '';
     final calendarId = argString(args, 'calendarId');
     final events = await backend.events(
       start: from,
@@ -143,18 +159,22 @@ class CalendarListEventsTool extends _CalendarTool {
       calendarIds: calendarId == null || calendarId.isEmpty ? null : [calendarId],
     );
     if (events.isEmpty) {
-      return ToolResult('No events from ${isoLocal(from)} to ${isoLocal(to)}.');
+      return ToolResult('No events from ${isoLocal(from)} to ${isoLocal(to)}.$clampNote');
     }
-    final limit = listLimit(args);
+    final requested = argInt(args, 'limit') ?? 50;
+    final limit = requested < 1 ? 1 : (requested > 200 ? 200 : requested);
     final shown = events.take(limit).toList();
     for (final event in shown) {
       final id = event.id;
       if (id != null) labels.remember(id, _label(event));
     }
     final header = events.length > shown.length
-        ? '${events.length} events, showing the first ${shown.length}:'
-        : '${events.length} event(s):';
-    return ToolResult([header, for (final event in shown) _eventLine(event)].join('\n'));
+        ? '${events.length} events match, showing the first ${shown.length}. '
+              'The list was cut: narrow the range or raise limit (max 200).'
+        : '${events.length} event(s) match:';
+    return ToolResult(
+      [header, for (final event in shown) _eventLine(event)].join('\n') + clampNote,
+    );
   }
 }
 

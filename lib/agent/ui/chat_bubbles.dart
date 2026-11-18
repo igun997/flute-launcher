@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_animate/flutter_animate.dart';
@@ -148,9 +149,12 @@ class UserMessage extends StatelessWidget {
 }
 
 class AssistantMessage extends StatelessWidget {
-  const AssistantMessage({super.key, required this.item});
+  const AssistantMessage({super.key, required this.item, this.clock});
 
   final AssistantItem item;
+
+  /// Time source for the live stats line; tests inject a fixed one.
+  final DateTime Function()? clock;
 
   @override
   Widget build(BuildContext context) {
@@ -174,10 +178,78 @@ class AssistantMessage extends StatelessWidget {
             padding: const EdgeInsets.only(top: 8),
             child: Text(item.error!, style: const TextStyle(color: FluteColors.warn, fontSize: 13.5, height: 1.4)),
           ),
+        // Nothing generated (empty or error-only turn): no stats.
+        if (hasText || hasReasoning)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: _GenerationStats(item: item, clock: clock ?? DateTime.now),
+          ),
       ],
     );
   }
 }
+
+/// Speed, token count, duration and time to first token. Ticks (4 Hz) only while the turn streams.
+class _GenerationStats extends StatefulWidget {
+  const _GenerationStats({required this.item, required this.clock});
+
+  final AssistantItem item;
+  final DateTime Function() clock;
+
+  @override
+  State<_GenerationStats> createState() => _GenerationStatsState();
+}
+
+class _GenerationStatsState extends State<_GenerationStats> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(_GenerationStats oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  void _sync() {
+    if (!widget.item.streaming) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+    _timer ??= Timer.periodic(const Duration(milliseconds: 250), (_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final now = widget.clock();
+    final parts = <String>[];
+    final speed = item.tokensPerSecond(now);
+    if (speed != null) parts.add('${speed.round()} tok/s');
+    parts.add('${item.tokensEstimated ? '~' : ''}${item.shownOutputTokens} tokens');
+    final elapsed = item.elapsed(now);
+    if (elapsed != null) parts.add(_formatSeconds(elapsed));
+    final firstToken = item.streaming ? null : item.timeToFirstToken;
+    if (firstToken != null) parts.add('first token ${_formatSeconds(firstToken)}');
+    return Text(
+      parts.join(' · '),
+      style: const TextStyle(color: FluteColors.muted, fontSize: 12, height: 1.3),
+    );
+  }
+}
+
+String _formatSeconds(Duration d) => '${(d.inMilliseconds / 1000).toStringAsFixed(1)} s';
 
 /// The model's reasoning, folded away by default.
 class ThinkingBlock extends StatefulWidget {

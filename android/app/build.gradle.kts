@@ -16,6 +16,13 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    // The lint analyzer crashes on KDoc in some environments (JavaDocParser NoSuchMethodError) and
+    // fails the release build. Lint is not part of how this app is verified.
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

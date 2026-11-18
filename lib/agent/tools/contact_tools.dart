@@ -63,28 +63,38 @@ class ContactsSearchTool extends _ContactTool {
 
   @override
   String get description =>
-      'Find contacts by name, company, phone number or email. Returns id, name, numbers and emails. '
-      'Use contacts_get for the full record.';
+      'Find contacts by name, company, phone number or email. With no query, list contacts in '
+      'name order. Returns id, name, numbers and emails. Use contacts_get for the full record.';
 
   @override
   Map<String, dynamic> get parameters => objectSchema({
-    'query': stringProp('Text to look for in names, companies, numbers and emails.'),
+    'query': stringProp(
+      'Text to look for in names, companies, numbers and emails. Leave out to list contacts.',
+    ),
     'limit': intProp('How many matches to list (default 25, max 100).'),
-  }, required: const ['query']);
+  });
 
   @override
   ToolRisk get risk => ToolRisk.read;
 
   @override
-  String describeCall(Map<String, dynamic> args) =>
-      'Search contacts for "${argString(args, 'query') ?? ''}"';
+  String describeCall(Map<String, dynamic> args) {
+    final query = argString(args, 'query') ?? '';
+    return query.isEmpty ? 'List contacts' : 'Search contacts for "$query"';
+  }
 
   @override
   Future<ToolResult> perform(Map<String, dynamic> args) async {
-    final query = requireArg(args, 'query');
-    final matches = (await backend.all()).where((c) => _matches(c, query)).toList()
+    final query = argString(args, 'query') ?? '';
+    final all = (await backend.all()).toList();
+    final matches = (query.isEmpty ? all : all.where((c) => _matches(c, query)))
+        .toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    if (matches.isEmpty) return ToolResult('No contacts match "$query".');
+    if (matches.isEmpty) {
+      return ToolResult(
+        query.isEmpty ? 'No contacts on this device.' : 'No contacts match "$query".',
+      );
+    }
     final limit = listLimit(args);
     final shown = matches.take(limit).toList();
     for (final contact in shown) {

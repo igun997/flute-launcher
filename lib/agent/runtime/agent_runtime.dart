@@ -249,6 +249,7 @@ class AgentRuntime extends ChangeNotifier {
       for (var round = 0; round < maxRounds; round++) {
         final tools = _toolMap();
         final assistant = AssistantItem(id: _id());
+        final assistant = AssistantItem(id: _id())..startedAt = _clock();
         _items.add(assistant);
         notifyListeners();
 
