@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../dev/bench_page.dart';
 import '../app/flute.dart';
 import '../app/theme.dart';
 import '../core/day_style.dart';
@@ -293,7 +294,10 @@ class SettingsPage extends StatelessWidget {
             child: const Text('Clear recent messages'),
           ),
           const SizedBox(height: 20),
-          const Text('Flute 0.1.0', style: TextStyle(color: FluteColors.muted, fontSize: 12)),
+          GestureDetector(
+            onLongPress: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const BenchPage())),
+            child: const Text('Flute 0.1.0', style: TextStyle(color: FluteColors.muted, fontSize: 12)),
+          ),
         ],
       ),
     );

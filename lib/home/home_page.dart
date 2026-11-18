@@ -72,7 +72,7 @@ class HomePage extends StatelessWidget {
                     PinGrid(flute: flute),
                     const SizedBox(height: 18),
                     Center(
-                      child: Text('Swipe up for apps', style: TextStyle(color: SkyInk.of(context).inkSoft, fontSize: 12, letterSpacing: 0.6)),
+                      child: Text('Swipe up for apps  ·  right to ask', style: TextStyle(color: SkyInk.of(context).inkSoft, fontSize: 12, letterSpacing: 0.6)),
                     ),
                   ],
                 ),

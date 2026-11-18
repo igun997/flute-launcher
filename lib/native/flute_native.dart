@@ -363,6 +363,34 @@ abstract final class FluteNative {
     );
   }
 
+  /// JPEG frames evenly spaced through a video file, longest edge at most [maxEdge]. Empty when
+  /// the file cannot be decoded.
+  static Future<List<Uint8List>> extractVideoFrames(
+    String path, {
+    int count = 6,
+    int maxEdge = 768,
+  }) async {
+    final raw = await _call('extractVideoFrames', {
+      'path': path,
+      'count': count,
+      'maxEdge': maxEdge,
+    });
+    return raw is List
+        ? raw.whereType<Uint8List>().toList(growable: false)
+        : const <Uint8List>[];
+  }
+
+  /// Duration and display size of a video file, or null when it cannot be read.
+  static Future<({int durationMs, int width, int height})?> videoInfo(String path) async {
+    final raw = await _call('videoInfo', {'path': path});
+    if (raw is! Map<Object?, Object?>) return null;
+    return (
+      durationMs: _int(raw['durationMs']),
+      width: _int(raw['width']),
+      height: _int(raw['height']),
+    );
+  }
+
   static Future<Object?> _call(
     String method, [
     Map<String, Object?>? arguments,

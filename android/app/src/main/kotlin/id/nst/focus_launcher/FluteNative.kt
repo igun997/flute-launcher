@@ -2,13 +2,17 @@ package id.nst.focus_launcher
 
 import android.app.KeyguardManager
 import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
+import kotlin.math.roundToInt
 
 /**
  * Handles `flute/native` calls and registers the `flute/events` stream.
@@ -126,6 +130,17 @@ class FluteNative(private val context: Context) : MethodChannel.MethodCallHandle
                         LocationAccess.reverseGeocode(context, latitude, longitude) { result.success(it) }
                     }
                 }
+                // Video frames for models that take only images. Decoding is slow: it runs on the worker.
+                "extractVideoFrames" -> {
+                    val path = call.string("path")
+                    val count = call.argument<Number>("count")?.toInt() ?: DEFAULT_FRAME_COUNT
+                    val maxEdge = call.argument<Number>("maxEdge")?.toInt() ?: DEFAULT_FRAME_EDGE
+                    inBackground(result) { extractVideoFrames(path, count, maxEdge) }
+                }
+                "videoInfo" -> {
+                    val path = call.string("path")
+                    inBackground(result) { videoInfo(path) }
+                }
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
@@ -163,6 +178,88 @@ class FluteNative(private val context: Context) : MethodChannel.MethodCallHandle
     private fun MethodCall.stringList(key: String): List<String> =
         (argument<List<*>>(key) ?: emptyList<Any?>()).filterIsInstance<String>()
 
+    /**
+     * JPEG frames evenly spaced through the video, longest edge at most [maxEdge]. Null when the
+     * file cannot be read or no frame decodes. Call only from a worker thread.
+     */
+    private fun extractVideoFrames(path: String, count: Int, maxEdge: Int): List<ByteArray>? {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(path)
+            val durationMs =
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    ?: return null
+            val n = count.coerceIn(1, MAX_FRAMES)
+            val edge = maxEdge.coerceIn(MIN_FRAME_EDGE, MAX_FRAME_EDGE)
+            val frames = ArrayList<ByteArray>(n)
+            for (i in 0 until n) {
+                // The middle of each of n equal slices, so no frame is taken at the very first or last instant.
+                val timeUs = durationMs * 1000L * (2 * i + 1) / (2 * n)
+                val frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: continue
+                frames.add(jpegScaled(frame, edge))
+            }
+            return frames.takeIf { it.isNotEmpty() }
+        } catch (e: Exception) {
+            // Class name only: the path must not reach logs or the UI.
+            return null
+        } finally {
+            retriever.release()
+        }
+    }
+
+    /** Duration in milliseconds and display size of a video (quarter turns applied), or null. */
+    private fun videoInfo(path: String): Map<String, Any>? {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(path)
+            val durationMs =
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    ?: return null
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+                ?: return null
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+                ?: return null
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull()
+                ?: 0
+            val turned = rotation == 90 || rotation == 270
+            return mapOf(
+                "durationMs" to durationMs,
+                "width" to (if (turned) height else width),
+                "height" to (if (turned) width else height),
+            )
+        } catch (e: Exception) {
+            // Class name only: the path must not reach logs or the UI.
+            return null
+        } finally {
+            retriever.release()
+        }
+    }
+
+    /** Scales [frame] so its longest edge is at most [maxEdge], encodes it as JPEG and recycles it. */
+    private fun jpegScaled(frame: Bitmap, maxEdge: Int): ByteArray {
+        val longest = maxOf(frame.width, frame.height)
+        val scaled = if (longest > maxEdge) {
+            val factor = maxEdge.toFloat() / longest
+            Bitmap.createScaledBitmap(
+                frame,
+                (frame.width * factor).roundToInt().coerceAtLeast(1),
+                (frame.height * factor).roundToInt().coerceAtLeast(1),
+                true,
+            )
+        } else {
+            frame
+        }
+        try {
+            val out = ByteArrayOutputStream()
+            check(scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)) { "jpeg encode failed" }
+            return out.toByteArray()
+        } finally {
+            if (scaled !== frame) scaled.recycle()
+            frame.recycle()
+        }
+    }
+
     companion object {
         const val CHANNEL = "flute/native"
         const val EVENTS_CHANNEL = "flute/events"
@@ -170,5 +267,11 @@ class FluteNative(private val context: Context) : MethodChannel.MethodCallHandle
         private const val DEFAULT_PAUSE_SECONDS = 10
         private const val DEFAULT_GRACE_MINUTES = 5
         private const val DEFAULT_ICON_SIZE = 96
+        private const val DEFAULT_FRAME_COUNT = 6
+        private const val MAX_FRAMES = 16
+        private const val DEFAULT_FRAME_EDGE = 768
+        private const val MIN_FRAME_EDGE = 64
+        private const val MAX_FRAME_EDGE = 2048
+        private const val JPEG_QUALITY = 80
     }
 }

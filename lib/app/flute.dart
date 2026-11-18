@@ -3,6 +3,14 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../agent/auth/provider_store.dart';
+import '../agent/auth/secret_store.dart';
+import '../agent/mcp/mcp_manager.dart';
+import '../agent/runtime/agent_runtime.dart';
+import '../agent/skills/skill_manager.dart';
+import '../agent/skills/skill_tools.dart';
+import '../agent/tools/builtin_tools.dart';
+import '../agent/ui/confirm_controller.dart';
 import '../core/app_icons.dart';
 import '../core/app_repository.dart';
 import '../core/category_engine.dart';
@@ -17,10 +25,18 @@ import '../weather/weather_service.dart';
 
 /// Owns every long-lived service and keeps the native lock in sync.
 class Flute {
-  Flute._(this.prefs, this.repo, this.modes, this.weather)
+  Flute._(this.prefs, this.repo, this.modes, this.weather, this.providers, this.mcp, this.skills, this.builtins)
     : style = StyleController(prefs, weather, modes),
       lockSettings = LockSettings(prefs),
-      pets = PetSettings(prefs);
+      pets = PetSettings(prefs) {
+    agent = AgentRuntime(
+      providers: providers,
+      toolSources: [builtins, mcp, SkillTools(skills)],
+      skills: skills,
+      confirmer: confirm,
+      onNewChat: confirm.reset,
+    );
+  }
 
   final SharedPreferences prefs;
   final AppRepository repo;
@@ -31,6 +47,14 @@ class Flute {
   final LockSettings lockSettings;
   final PetSettings pets;
   final ValueNotifier<PetLibrary?> petLibrary = ValueNotifier(null);
+
+  // The AI agent: providers and sign-in, MCP servers, skills, built-in tools, the chat itself.
+  final ProviderStore providers;
+  final McpManager mcp;
+  final SkillManager skills;
+  final BuiltinTools builtins;
+  final ConfirmController confirm = ConfirmController();
+  late final AgentRuntime agent;
   EmailService get email => EmailService.instance;
 
   /// Latest messages captured from notifications, newest first.
@@ -57,7 +81,11 @@ class Flute {
     final repo = AppRepository(prefs, engine);
     final modes = ModeEngine(prefs)..load();
     final weather = WeatherService();
-    final flute = Flute._(prefs, repo, modes, weather);
+    final providers = ProviderStore(prefs: prefs, secrets: SecureSecretStore());
+    final mcp = McpManager(prefs: prefs, secrets: SecureSecretStore());
+    final skills = await SkillManager.open();
+    final builtins = BuiltinTools(prefs: prefs);
+    final flute = Flute._(prefs, repo, modes, weather, providers, mcp, skills, builtins);
     await flute._start();
     return flute;
   }
@@ -71,8 +99,12 @@ class Flute {
       refreshPermissions(),
       refreshMessages(),
       lockSettings.init(),
+      providers.load(),
+      mcp.load(),
+      skills.load(),
     ]);
     unawaited(PetLibrary.open().then((l) => petLibrary.value = l, onError: (Object _) {}));
+    unawaited(mcp.connectEnabled());
     unawaited(icons.ensure(repo.favoritePackages));
     repo.addListener(() => unawaited(icons.ensure(repo.favoritePackages)));
     _lastApps = _lastUsage = DateTime.now();
@@ -142,5 +174,9 @@ class Flute {
     repo.dispose();
     modes.dispose();
     style.dispose();
+    agent.dispose();
+    confirm.dispose();
+    mcp.dispose();
+    providers.dispose();
   }
 }
