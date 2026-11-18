@@ -50,9 +50,25 @@ Kept in Dart, on purpose:
   Rust would add a bridge crossing for no gain.
 - **UI, pets, sky**: already on the GPU (`drawAtlas`, fragment shaders).
 
+## Where Rust is not used, and why
+
+Measured on the same phone: one call across the bridge costs about **0.15 ms**. Work that Dart does
+in microseconds loses that on every call, so it stays in Dart:
+
+- Turning one streamed chat event into text: about 9 microseconds in Dart.
+- Converting a line of Markdown to speakable text for voice mode: microseconds.
+- Pet simulation (one pet, 12 ticks a second) and the next-fire maths for routines: far below a frame.
+
+**GPU work stays on the GPU.** Sprites are drawn with `drawAtlas` and the sky, the window glow and the
+voice orb are fragment shaders. Rust runs on the CPU and cannot draw faster than the GPU does.
+
+Rust is used where it is the right tool: hashing and unzip (13x and 4x), categories (5x), search and,
+for the sandbox, a WASI interpreter (`wasmi`) that runs Python on the phone with a fuel limit, a memory cap
+and no network.
+
 ## Costs
 
-- APK (arm64): +2.1 MB for the Rust library (34.7 MB before, 36.9 MB after).
+- APK (arm64): about +4 MB for the Rust library with the WASM runtime (34.7 MB before the Rust core, 39.9 MB now, which also includes the voice, routines and sandbox code).
 - Build: needs a Rust toolchain and the Android targets; first build compiles the crate (about 1 min on a
   4-core box), later builds are cached.
 - Rinf's README says the project is looking for a new maintainer. The Rust side is small and isolated

@@ -92,11 +92,16 @@ Swipe left on Home for **Inbox**: WhatsApp and SMS notifications (captured from 
 
 ### Ask Flute: an assistant on the left of Home
 
-Swipe right from Home. Chat with any model, with Markdown answers, attachments (photo, camera, video, files) and tools.
+Swipe right from Home. Chat with any model: Markdown answers (tables included), attachments (photo, camera, video, files), and a live **tokens per second** readout while it writes.
 
 - **Bring your own model:** any OpenAI-compatible gateway (the model list is pulled automatically and searchable), **Sign in with ChatGPT** (uses your ChatGPT plan, through OpenAI's official flow for open-source apps) or **OpenRouter** (OAuth). Claude's own subscription login is not offered: Anthropic does not allow it in third-party apps. Use an API key via a gateway or OpenRouter.
-- **Tools on your phone:** calendar, contacts and notes. **Every change, and every read of personal data, asks you first** (allow once, allow for this chat, deny).
-- **External tools (MCP):** add GitHub, Jira or any Streamable HTTP MCP server in Agent settings. Tool calls that are not read-only ask first.
+- **It runs your launcher:** switch mode (Free, Work, Focus, Sleep, with a timer), manage schedules, pins, app categories and a few settings. Changes ask first.
+- **Tools on your phone:** calendar (by date range), contacts (list or search) and notes. **Every change, and every read of personal data, asks you first** (allow once, allow for this chat, deny).
+- **Voice mode:** talk to it and it talks back (Android speech recognition and text-to-speech, free, on device where available) with a Jarvis-style orb drawn by a GPU shader. Approvals work by voice too: it reads the action and you say allow or deny.
+- **Routines:** saved prompts the model runs on a schedule (daily, weekly, every N minutes) and reports by notification, e.g. a morning briefing. They only read unless you allow writes. See them in a list or a month calendar.
+- **Web search:** add a Tavily or Firecrawl key and the assistant can search and read pages.
+- **Sandbox:** run Python in an **Instabox** or **Daytona** sandbox (API key in settings) or, with no key, in a small **WASM Python on the phone** (runs in Rust, no network). The sandbox is always shut down when the answer is done.
+- **External tools (MCP):** add GitHub, Jira or any Streamable HTTP MCP server. Servers that support OAuth sign in through the browser (no token to paste); otherwise use a bearer token or a custom header. Tool calls that are not read-only ask first.
 - **Skills:** type `skills add owner/repo` in the chat (the same commands as `npx skills`: `list`, `find`, `update`, `remove`). Skills are instructions only; Flute never runs code from them.
 - Video is sent to the model as a few frames, since chat APIs take images, not video.
 
@@ -115,6 +120,8 @@ Pick a city, or turn on **Follow my location**: Flute updates the city when you 
 | Accessibility (Flute lock service) | `GLOBAL_ACTION_LOCK_SCREEN` only | Double-tap to lock |
 | Approximate location | Pick the weather city | Follow my location |
 | Calendar, Contacts | Let the assistant read and change them, after you allow each action | Ask Flute (off until you switch it on) |
+| Microphone | Voice mode and speech to text | Voice mode (asked when you first use it) |
+| Notifications, exact alarms | Show routine results at the time you chose | Routines |
 | Network | Weather (Open-Meteo), IMAP if you add mail | Weather, mail |
 
 Everything is opt-in and off until you enable it. Flute reads no message bodies from mail, stores IMAP passwords in the Android keystore, and has no analytics or server of its own.
