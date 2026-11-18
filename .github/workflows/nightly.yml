@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
       - run: flutter analyze
       - run: flutter test
@@ -29,12 +29,14 @@ jobs:
         run: |
           base=$(sed -n 's/^version: \([0-9.]*\).*/\1/p' pubspec.yaml)
           echo "name=${base}-nightly.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          # Minutes since the epoch: always growing, shared by nightly and release builds.
+          echo "code=$(( $(date +%s) / 60 ))" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/build-apk
         id: apk
         with:
           build-name: ${{ steps.v.outputs.name }}
-          build-number: ${{ github.run_number }}
+          build-number: ${{ steps.v.outputs.code }}
           keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}

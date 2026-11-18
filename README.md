@@ -17,7 +17,7 @@ A calm, text-first Android home screen that **understands your apps**. Flute sor
 | **Release** | Tagged, tested builds. Use this one. | [Latest release](https://github.com/igun997/flute-launcher/releases/latest) |
 | **Nightly** | Latest commit on `main`, rebuilt on every push. May be unstable. | [Nightly pre-release](https://github.com/igun997/flute-launcher/releases/tag/nightly) |
 
-Both are **release builds signed with the same Flute key**, so a nightly can be updated to a release (and back, if the version code allows) without uninstalling.
+Both are **release builds signed with the same Flute key**, so they update over each other without uninstalling. Android never installs an older build over a newer one, so to go from a nightly back to an older release, uninstall first.
 
 ### Install
 
@@ -180,7 +180,7 @@ The repository is built by GitHub Actions. To get signed nightly and release APK
 
 Without the secrets, the workflows still run and produce debug-signed APKs. Secrets are only given to workflows that run on your own branches and tags; pull requests from forks use the plain *CI* workflow (analyze + test) and never see them.
 
-Version codes come from the workflow run number, so each build is newer than the last and installs over the previous one.
+The Android version code is the build time in minutes since 1970, so every build is newer than the last and installs over the previous one, nightly or release.
 
 ## Add your own character
 
