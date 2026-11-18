@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import '../tools/agent_tool.dart';
 import '../tools/tool_support.dart';
@@ -19,6 +20,7 @@ class SandboxTools implements ToolSource {
         _ShellTool(manager),
         _WriteFileTool(manager),
         _ReadFileTool(manager),
+        _TranscribeTool(manager),
       ];
 
   final List<AgentTool> _tools;
@@ -191,6 +193,84 @@ class _ReadFileTool extends _SandboxTool {
       );
     }
     return ToolResult(text.isEmpty ? '$path is empty.' : text);
+  }
+}
+
+/// The Python run inside the sandbox for [_TranscribeTool]. Values are JSON-encoded, which is also
+/// valid Python string syntax, so a path or language can never break out of the script.
+String transcribeScript({required String audioPath, String? language, String model = 'base'}) {
+  final lang = (language == null || language.isEmpty) ? 'None' : jsonEncode(language);
+  return '''
+from faster_whisper import WhisperModel
+m = WhisperModel(${jsonEncode(model)}, device="cpu", compute_type="int8")
+segments, info = m.transcribe(${jsonEncode(audioPath)}, language=$lang)
+print("".join(s.text for s in segments).strip())
+''';
+}
+
+/// Speech to text inside a remote sandbox (faster-whisper on CPU). The cheaper route is
+/// `audio_transcribe`, which asks the model provider; this one needs no provider support.
+class _TranscribeTool extends _SandboxTool {
+  _TranscribeTool(super.manager);
+
+  static const _maxAudioBytes = 25 * 1024 * 1024;
+
+  @override
+  String get name => 'sandbox_transcribe_audio';
+
+  @override
+  String get description =>
+      'Transcribe an audio file from the phone to text inside a remote sandbox with Whisper. '
+      'Slow on the first run (it installs faster-whisper and downloads a model) and uses sandbox time. '
+      'Prefer audio_transcribe when it is available. Remote sandboxes only.';
+
+  @override
+  Map<String, dynamic> get parameters => objectSchema({
+    'path': stringProp('Path of the audio file on the phone.'),
+    'language': stringProp('Language code such as en or id. Detected when omitted.'),
+    'model': stringProp('Whisper size: tiny, base (default) or small.'),
+  }, required: ['path']);
+
+  @override
+  String describeCall(Map<String, dynamic> args) =>
+      'Transcribe ${_preview(args['path'])} in a sandbox';
+
+  @override
+  Future<ToolResult> perform(Map<String, dynamic> args) async {
+    final path = requireArg(args, 'path');
+    final model = argString(args, 'model') ?? 'base';
+    if (!const {'tiny', 'base', 'small'}.contains(model)) {
+      throw const ToolError('model must be tiny, base or small.');
+    }
+    final file = File(path);
+    if (!await file.exists()) throw ToolError('No file at $path.');
+    if (await file.length() > _maxAudioBytes) {
+      throw const ToolError('The audio file is larger than 25 MB.');
+    }
+    final bytes = await file.readAsBytes();
+    final dot = path.lastIndexOf('.');
+    final extension = dot < 0 ? 'bin' : path.substring(dot + 1).replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    final remote = '/tmp/flute-audio.$extension';
+    final watch = Stopwatch()..start();
+    return inSession((session) async {
+      await session.writeFile(remote, bytes);
+      final install = await session.runShell(
+        'python3 -m pip install -q faster-whisper 2>&1 | tail -3',
+        timeout: const Duration(seconds: _maxTimeoutS),
+      );
+      if (install.exitCode != 0) {
+        return ToolResult('Could not install the transcription package.\n${_tail(install.stdout + install.stderr)}', isError: true);
+      }
+      final result = await session.runPython(
+        transcribeScript(audioPath: remote, language: argString(args, 'language'), model: model),
+        timeout: const Duration(seconds: _maxTimeoutS),
+      );
+      if (result.exitCode != 0) {
+        return ToolResult(_formatExec(result, watch.elapsed), isError: true);
+      }
+      final text = result.stdout.trim();
+      return ToolResult(text.isEmpty ? '(no speech found)' : text);
+    });
   }
 }
 
