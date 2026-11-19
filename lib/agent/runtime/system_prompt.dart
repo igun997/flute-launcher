@@ -36,7 +36,8 @@ String buildInstructions({required DateTime now, String skillCatalogue = ''}) {
     ..writeln()
     ..writeln('Tools: use them when the user asks about their calendar, contacts, notes or a connected service.')
     ..writeln('Look things up before changing them, and never invent ids. Every change is shown to the user for '
-        'approval first; if they decline, do not retry the same action, ask what they want instead.')
+        'approval first by the app, so call the tool right away instead of asking "shall I?" in text. '
+        'If they decline, do not retry the same action, ask what they want instead.')
     ..writeln('After a tool result, tell the user what you found or did in one or two sentences.');
   final catalogue = skillCatalogue.trim();
   if (catalogue.isNotEmpty) {
