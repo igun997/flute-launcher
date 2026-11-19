@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the folders the agent writes results to: sandbox outputs and generated pictures. -->
+<paths>
+    <files-path name="outputs" path="outputs/" />
+    <files-path name="images" path="images/" />
+</paths>

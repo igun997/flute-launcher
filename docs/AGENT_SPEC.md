@@ -679,3 +679,22 @@ A fresh `pub get` on a new build box resolved `jni 1.2.0` / `jni_flutter 1.1.0` 
 `shared_preferences_android`), and the app died at start with `ClassNotFoundException: Landroid/content/Context;`. `pubspec.yaml`
 pins `jni: 1.1.2` and `jni_flutter: 1.0.4+1` in `dependency_overrides`. `pubspec.lock` is not part of the resolution on the build box.
 
+## Slice N: sandbox network and files (Main)
+
+**Network for local Python** (`native/hub/src/net_shim.py`, `wasm.rs`, `lib/agent/sandbox/local_net.dart`). WASI has no sockets.
+With `network` on, a run is started as `python -c <boot> <program>`: the boot script swaps `http.client.HTTPConnection/HTTPSConnection`
+(and stubs `_create_https_context`, so `urllib.request` offers https) for classes that write one marked line
+(`\x01FLUTE-NET {json}`) to stdout and read one JSON line from stdin. Rust filters those lines out of the captured output,
+relays each to Dart (`WasmNetRequest` / `WasmNetResponse`) and blocks the run's thread for the answer (90 s, 100 calls per run).
+`LocalNetBridge` performs it with `package:http`: http/https only, GET/HEAD/POST/PUT/PATCH/DELETE, request body <= 2 MB, response <= 5 MB,
+no redirects (urllib follows them, every hop comes back to be checked), and every resolved address must be public
+(`isPublicAddress`: not loopback, private, link-local, CGNAT, multicast, unspecified, unique-local, or mapped from those). The program is
+passed with `-c` because stdin carries the answers. Setting `sandbox.localNetwork` (default on). Remote sandboxes have their own network.
+Fuel is not wall time; see PERFORMANCE.md.
+
+**Showing files** (`lib/agent/sandbox/sandbox_outputs.dart`, `sandbox_tools.dart`). A sandbox is shut down after each tool call, so files
+are collected inside the same call: `sandbox_python` and `sandbox_shell` take `show_files` (paths in the sandbox); the local runtime also
+reports everything the program wrote to `/out` (a per-session host directory preopened by Rust as `/out`, deleted on close). Each file
+is copied to `<app support>/outputs/<us>_<name>` (<= 20 MB, <= 8 per call, newest 100 kept) and returned as `ToolResult.files` (`ToolFile`);
+the chat shows pictures inline and other files as rows with open, share and save (to Downloads).
+

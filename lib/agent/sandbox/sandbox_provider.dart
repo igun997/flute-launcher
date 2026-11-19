@@ -30,6 +30,10 @@ abstract class SandboxSession {
 
   Future<List<int>> readFile(String path);
 
+  /// Files the last run created that should be shown without being asked for. Only the local
+  /// runtime knows any (what the program wrote to `/out`); remote sandboxes return none.
+  Future<List<String>> newFiles();
+
   /// Releases the sandbox. Safe to call more than once.
   Future<void> close();
 }

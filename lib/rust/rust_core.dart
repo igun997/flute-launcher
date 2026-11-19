@@ -181,6 +181,7 @@ class RustCore {
     required int timeoutMs,
     required int maxMemoryMb,
     bool network = false,
+    String filesDir = '',
   }) {
     final id = _nextId++;
     return _call<WasmRunResponse>(
@@ -193,6 +194,7 @@ class RustCore {
         timeoutMs: timeoutMs,
         maxMemoryMb: maxMemoryMb,
         network: network,
+        filesDir: filesDir,
       ).sendSignalToRust(),
     );
   }

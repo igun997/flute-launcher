@@ -391,6 +391,26 @@ abstract final class FluteNative {
     );
   }
 
+  /// Opens the system share chooser for a file in the app's files directory. False when the path
+  /// is refused or no chooser could start.
+  static Future<bool> shareFile({required String path, required String mime, String? name}) async =>
+      _bool(await _call('shareFile', {'path': path, 'mime': mime, 'name': name}));
+
+  /// Opens a file in another app. False when no app can open it, or the path is refused.
+  static Future<bool> openFile({required String path, required String mime}) async =>
+      _bool(await _call('openFile', {'path': path, 'mime': mime}));
+
+  /// Copies a file into the public Downloads folder (Android 10+). Returns the name it was saved
+  /// under, which may gain a " (2)" suffix. Null on failure or before Android 10.
+  static Future<String?> saveToDownloads({
+    required String path,
+    required String name,
+    required String mime,
+  }) async {
+    final saved = await _call('saveToDownloads', {'path': path, 'name': name, 'mime': mime});
+    return saved is String && saved.isNotEmpty ? saved : null;
+  }
+
   static Future<Object?> _call(
     String method, [
     Map<String, Object?>? arguments,

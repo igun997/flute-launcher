@@ -6,7 +6,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../app/theme.dart';
 import '../runtime/agent_runtime.dart';
-import 'chat_bubbles.dart' show motion;
+import '../tools/agent_tool.dart';
+import 'chat_bubbles.dart' show motion, pictureFile, saveToolFile, shareToolFile, showPictureMenu, ToolFileRow;
 
 /// Loaded once for the whole app. Null when the shader cannot be loaded; a plain gradient is drawn then.
 final Future<ui.FragmentProgram?> _program = ui.FragmentProgram.fromAsset('shaders/imagine.frag')
@@ -15,7 +16,7 @@ final Future<ui.FragmentProgram?> _program = ui.FragmentProgram.fromAsset('shade
 
 const _loopSeconds = 60.0;
 
-/// What sits under an image tool call: the working canvas while it runs, then the picture.
+/// What sits under a tool call that made pictures or files: the working canvas while it runs, then the outputs.
 class ToolImages extends StatelessWidget {
   const ToolImages({super.key, required this.item});
 
@@ -26,12 +27,18 @@ class ToolImages extends StatelessWidget {
     final Widget child;
     if (item.state == ToolState.running) {
       child = const CreatingImage(key: ValueKey('creating'));
-    } else if (item.images.isNotEmpty) {
+    } else if (item.images.isNotEmpty || item.files.isNotEmpty) {
       child = Column(
-        key: ValueKey('images-${item.id}'),
+        key: ValueKey('outputs-${item.id}'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final path in item.images)
-            Padding(padding: const EdgeInsets.only(top: 10), child: GeneratedImage(path: path)),
+            Padding(padding: const EdgeInsets.only(top: 10), child: GeneratedImage(file: pictureFile(path))),
+          for (final file in item.files)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: file.isImage ? GeneratedImage(file: file) : ToolFileRow(file: file),
+            ),
         ],
       );
     } else {
@@ -177,11 +184,11 @@ class _CanvasPainter extends CustomPainter {
       old.shader != shader || old.clock != clock || old.color != color;
 }
 
-/// A finished picture. It fades and settles in once decoded; a tap opens it full screen.
+/// A finished picture. It fades and settles in once decoded; a tap opens it full screen and a long-press offers Save or Share.
 class GeneratedImage extends StatelessWidget {
-  const GeneratedImage({super.key, required this.path});
+  const GeneratedImage({super.key, required this.file});
 
-  final String path;
+  final ToolFile file;
 
   @override
   Widget build(BuildContext context) {
@@ -195,16 +202,17 @@ class GeneratedImage extends StatelessWidget {
             barrierColor: Colors.black,
             transitionDuration: motion(context, 220),
             reverseTransitionDuration: motion(context, 180),
-            pageBuilder: (_, _, _) => _FullImage(path: path),
+            pageBuilder: (_, _, _) => _FullImage(file: file),
             transitionsBuilder: (_, animation, _, child) => FadeTransition(opacity: animation, child: child),
           ),
         ),
+        onLongPressStart: (details) => unawaited(showPictureMenu(context, details.globalPosition, file)),
         child: Hero(
-          tag: path,
+          tag: file.path,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: Image.file(
-              File(path),
+              File(file.path),
               width: double.infinity,
               fit: BoxFit.fitWidth,
               cacheWidth: 1080,
@@ -262,9 +270,9 @@ class _MissingImage extends StatelessWidget {
 }
 
 class _FullImage extends StatelessWidget {
-  const _FullImage({required this.path});
+  const _FullImage({required this.file});
 
-  final String path;
+  final ToolFile file;
 
   @override
   Widget build(BuildContext context) {
@@ -277,21 +285,33 @@ class _FullImage extends StatelessWidget {
           children: [
             Positioned.fill(
               child: Hero(
-                tag: path,
+                tag: file.path,
                 child: InteractiveViewer(
                   maxScale: 5,
-                  child: Image.file(File(path), fit: BoxFit.contain, errorBuilder: (_, _, _) => const _MissingImage()),
+                  child: Image.file(File(file.path), fit: BoxFit.contain, errorBuilder: (_, _, _) => const _MissingImage()),
                 ),
               ),
             ),
             SafeArea(
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: IconButton(
-                  tooltip: 'Close',
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Close',
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Save to Downloads',
+                    icon: const Icon(Icons.download_outlined, color: Colors.white),
+                    onPressed: () => unawaited(saveToolFile(ScaffoldMessenger.of(context), file)),
+                  ),
+                  IconButton(
+                    tooltip: 'Share',
+                    icon: const Icon(Icons.share_outlined, color: Colors.white),
+                    onPressed: () => unawaited(shareToolFile(ScaffoldMessenger.of(context), file)),
+                  ),
+                ],
               ),
             ),
           ],

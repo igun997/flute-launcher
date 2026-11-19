@@ -341,6 +341,9 @@ class _DaytonaSession implements SandboxSession {
   @override
   Future<List<int>> readFile(String path) => _provider._readFile(_box, path);
 
+  @override
+  Future<List<String>> newFiles() async => const [];
+
   /// Marks closed only after success, so a failed close can be retried.
   @override
   Future<void> close() async {

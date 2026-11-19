@@ -120,6 +120,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- Files the agent made, shared or opened through content URIs. Exposes only the app's files directory (res/xml/file_paths.xml). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Routine alarms, "Run again" and the reschedule events (time zone, package update, exact-alarm grant). -->
         <receiver
             android:name=".RoutineReceiver"

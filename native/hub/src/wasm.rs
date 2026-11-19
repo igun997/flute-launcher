@@ -16,7 +16,7 @@ use wasmi::{
   Config, Engine, Linker, Module, ResourceLimiter, Store, StoreLimits, StoreLimitsBuilder, TrapCode,
 };
 use wasmi_wasi::WasiCtx;
-use wasmi_wasi::sync::{WasiCtxBuilder, add_to_linker};
+use wasmi_wasi::sync::{Dir, WasiCtxBuilder, add_to_linker, ambient_authority};
 use wasmi_wasi::wasi_common::pipe::{ReadPipe, WritePipe};
 
 use crate::signals::{
@@ -304,6 +304,7 @@ fn calibrate() {
     timeout_ms: MAX_TIMEOUT_MS,
     max_memory_mb: MAX_MEMORY_MB,
     network: false,
+    files_dir: String::new(),
   };
   let mut used = 0;
   let started = Instant::now();
@@ -383,6 +384,15 @@ fn run_with(
     }
   }
   builder.stderr(Box::new(WritePipe::new(Capture(Arc::clone(&stderr)))));
+  if !request.files_dir.is_empty() {
+    let dir = match Dir::open_ambient_dir(&request.files_dir, ambient_authority()) {
+      Ok(dir) => dir,
+      Err(err) => return failed(format!("cannot open the files directory: {err}")),
+    };
+    if let Err(err) = builder.preopened_dir(dir, "/out") {
+      return failed(err.to_string());
+    }
+  }
   let wasi = builder.build();
 
   let limits = StoreLimitsBuilder::new()
@@ -458,6 +468,7 @@ mod tests {
       timeout_ms,
       max_memory_mb: MAX_MEMORY_MB,
       network: false,
+      files_dir: String::new(),
     })
   }
 
@@ -500,6 +511,7 @@ mod tests {
       timeout_ms: 60_000,
       max_memory_mb: MAX_MEMORY_MB,
       network: true,
+      files_dir: String::new(),
     };
     let fuel = 60_000 * FUEL_PER_MS.load(Ordering::Relaxed);
     run_with(&request, fuel, &mut 0, Some(net))
@@ -576,5 +588,36 @@ mod tests {
     link.filter(b"tail");
     link.finish();
     assert_eq!(String::from_utf8_lossy(&lock(&out)), "no newline yet\nsecond\ntail");
+  }
+
+  #[test]
+  fn files_written_to_out_appear_on_the_host() -> Result<(), String> {
+    if load_python()?.is_none() {
+      return Ok(());
+    }
+    let dir = std::env::temp_dir().join(format!("flute_out_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let code = "open('/out/report.csv', 'w').write('a,b\\n1,2\\n')\n\
+      open('/out/blob.bin', 'wb').write(bytes(range(256)))\n\
+      import os\n\
+      print(sorted(os.listdir('/out')))\n";
+    let response = run_module(&WasmRunRequest {
+      id: 1,
+      argv: vec!["python".to_owned(), "-c".to_owned(), code.to_owned()],
+      env: Vec::new(),
+      stdin: String::new(),
+      timeout_ms: 60_000,
+      max_memory_mb: MAX_MEMORY_MB,
+      network: false,
+      files_dir: dir.to_string_lossy().into_owned(),
+    });
+    let csv = std::fs::read_to_string(dir.join("report.csv")).map_err(|e| e.to_string());
+    let blob = std::fs::read(dir.join("blob.bin")).map_err(|e| e.to_string());
+    std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    assert_eq!(response.exit_code, 0, "{}", response.stderr);
+    assert_eq!(response.stdout, "['blob.bin', 'report.csv']\n");
+    assert_eq!(csv?, "a,b\n1,2\n");
+    assert_eq!(blob?.len(), 256);
+    Ok(())
   }
 }

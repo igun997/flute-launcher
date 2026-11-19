@@ -37,6 +37,7 @@ abstract class WasmRuntime {
     required int timeoutMs,
     required int maxMemoryMb,
     bool network = false,
+    String filesDir = '',
   });
 }
 
@@ -58,6 +59,7 @@ class RustWasmRuntime implements WasmRuntime {
     required int timeoutMs,
     required int maxMemoryMb,
     bool network = false,
+    String filesDir = '',
   }) async {
     if (network) RustCore.instance.netHandler = _net.handle;
     final r = await RustCore.instance.wasmRun(
@@ -67,6 +69,7 @@ class RustWasmRuntime implements WasmRuntime {
       timeoutMs: timeoutMs,
       maxMemoryMb: maxMemoryMb,
       network: network,
+      filesDir: filesDir,
     );
     return WasmOutcome(
       exitCode: r.exitCode,
@@ -201,7 +204,10 @@ class LocalWasmProvider implements SandboxProvider {
       throw const SandboxException('The local Python runtime has no saved sandboxes.');
     }
     await _ensureLoaded();
-    return _LocalWasmSession(_runtime, network: _allowNetwork());
+    final root = await directory();
+    final files = Directory('${root.path}/out/${DateTime.now().microsecondsSinceEpoch}');
+    await files.create(recursive: true);
+    return _LocalWasmSession(_runtime, network: _allowNetwork(), files: files);
   }
 
   /// Loads the module into Rust once per process; Rust keeps it afterwards.
@@ -224,20 +230,52 @@ class LocalWasmProvider implements SandboxProvider {
 }
 
 class _LocalWasmSession implements SandboxSession {
-  _LocalWasmSession(this._runtime, {required this.network});
+  _LocalWasmSession(this._runtime, {required this.network, required this.files});
+
+  /// Where a program's `/out` lives on the phone; removed when the session closes.
+  static const guestDir = '/out';
 
   final WasmRuntime _runtime;
+  final Directory files;
 
   /// Public web addresses may be fetched (through the Dart bridge) while the program runs.
   final bool network;
   bool _closed = false;
+  Map<String, String> _before = const {};
 
   @override
   String get label => 'Local Python';
 
+  /// `name -> "length:modified"` of every file under [files].
+  Map<String, String> _snapshot() {
+    final map = <String, String>{};
+    if (!files.existsSync()) return map;
+    for (final entity in files.listSync(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final stat = entity.statSync();
+      map[entity.path.substring(files.path.length + 1)] = '${stat.size}:${stat.modified.microsecondsSinceEpoch}';
+    }
+    return map;
+  }
+
+  /// The host file for a guest path such as `/out/chart.png`, never outside [files].
+  File _hostFile(String path) {
+    final prefix = '$guestDir/';
+    if (!path.startsWith(prefix) || path.length == prefix.length) {
+      throw const SandboxException('Local Python keeps files under /out only.');
+    }
+    final relative = path.substring(prefix.length);
+    final parts = relative.split('/');
+    if (parts.any((p) => p.isEmpty || p == '.' || p == '..')) {
+      throw const SandboxException('That file path is not allowed.');
+    }
+    return File('${files.path}/$relative');
+  }
+
   @override
   Future<ExecResult> runPython(String code, {required Duration timeout}) async {
     if (_closed) throw const SandboxException('The sandbox is closed.');
+    _before = _snapshot();
     final WasmOutcome out;
     try {
       out = await _runtime.run(
@@ -248,6 +286,7 @@ class _LocalWasmSession implements SandboxSession {
         timeoutMs: timeout.inMilliseconds,
         maxMemoryMb: LocalWasmProvider._runMemoryMb,
         network: network,
+        filesDir: files.path,
       );
     } on RustException catch (e) {
       throw SandboxException('Local Python failed: ${e.message}');
@@ -279,20 +318,34 @@ class _LocalWasmSession implements SandboxSession {
 
   @override
   Future<void> writeFile(String path, List<int> bytes) async {
-    throw const SandboxException(
-      'File transfer needs a remote sandbox. The local Python runtime keeps no files.',
-    );
+    final file = _hostFile(path);
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(bytes, flush: true);
   }
 
   @override
   Future<List<int>> readFile(String path) async {
-    throw const SandboxException(
-      'File transfer needs a remote sandbox. The local Python runtime keeps no files.',
-    );
+    final file = _hostFile(path);
+    if (!await file.exists()) throw SandboxException('No file at $path.');
+    return file.readAsBytes();
+  }
+
+  @override
+  Future<List<String>> newFiles() async {
+    final now = _snapshot();
+    return [
+      for (final entry in now.entries)
+        if (_before[entry.key] != entry.value) '$guestDir/${entry.key}',
+    ]..sort();
   }
 
   @override
   Future<void> close() async {
     _closed = true;
+    try {
+      if (await files.exists()) await files.delete(recursive: true);
+    } on FileSystemException {
+      // Left behind at worst until the next clean-up of the runtime directory.
+    }
   }
 }

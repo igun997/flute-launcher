@@ -13,6 +13,7 @@ class WasmRunRequest {
     required this.timeoutMs,
     required this.maxMemoryMb,
     required this.network,
+    required this.filesDir,
   });
 
   static WasmRunRequest deserialize(BinaryDeserializer deserializer) {
@@ -25,6 +26,7 @@ class WasmRunRequest {
       timeoutMs: deserializer.deserializeUint32(),
       maxMemoryMb: deserializer.deserializeUint32(),
       network: deserializer.deserializeBool(),
+      filesDir: deserializer.deserializeString(),
     );
     deserializer.decreaseContainerDepth();
     return instance;
@@ -46,6 +48,7 @@ class WasmRunRequest {
   final int timeoutMs;
   final int maxMemoryMb;
   final bool network;
+  final String filesDir;
 
   WasmRunRequest copyWith({
     int? id,
@@ -55,6 +58,7 @@ class WasmRunRequest {
     int? timeoutMs,
     int? maxMemoryMb,
     bool? network,
+    String? filesDir,
   }) {
     return WasmRunRequest(
       id: id ?? this.id,
@@ -64,6 +68,7 @@ class WasmRunRequest {
       timeoutMs: timeoutMs ?? this.timeoutMs,
       maxMemoryMb: maxMemoryMb ?? this.maxMemoryMb,
       network: network ?? this.network,
+      filesDir: filesDir ?? this.filesDir,
     );
   }
 
@@ -76,6 +81,7 @@ class WasmRunRequest {
     serializer.serializeUint32(timeoutMs);
     serializer.serializeUint32(maxMemoryMb);
     serializer.serializeBool(network);
+    serializer.serializeString(filesDir);
     serializer.decreaseContainerDepth();
   }
 
@@ -97,7 +103,8 @@ class WasmRunRequest {
       && stdin == other.stdin
       && timeoutMs == other.timeoutMs
       && maxMemoryMb == other.maxMemoryMb
-      && network == other.network;
+      && network == other.network
+      && filesDir == other.filesDir;
   }
 
   @override
@@ -109,6 +116,7 @@ class WasmRunRequest {
         timeoutMs,
         maxMemoryMb,
         network,
+        filesDir,
       );
 
   @override
@@ -123,7 +131,8 @@ class WasmRunRequest {
         'stdin: $stdin, '
         'timeoutMs: $timeoutMs, '
         'maxMemoryMb: $maxMemoryMb, '
-        'network: $network'
+        'network: $network, '
+        'filesDir: $filesDir'
         ')';
       return true;
     }());

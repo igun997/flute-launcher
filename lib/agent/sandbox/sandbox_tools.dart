@@ -4,6 +4,7 @@ import 'dart:io';
 import '../tools/agent_tool.dart';
 import '../tools/tool_support.dart';
 import 'sandbox_manager.dart';
+import 'sandbox_outputs.dart';
 import 'sandbox_provider.dart';
 
 const _maxOutputChars = 8000;
@@ -14,10 +15,10 @@ const _maxDescribeChars = 600;
 
 /// The sandbox tools: Python, shell, and file access in an isolated machine.
 class SandboxTools implements ToolSource {
-  SandboxTools(SandboxManager manager)
+  SandboxTools(SandboxManager manager, {SandboxOutputs? outputs})
     : _tools = [
-        _PythonTool(manager),
-        _ShellTool(manager),
+        _PythonTool(manager, outputs ?? SandboxOutputs()),
+        _ShellTool(manager, outputs ?? SandboxOutputs()),
         _WriteFileTool(manager),
         _ReadFileTool(manager),
         _TranscribeTool(manager),
@@ -43,6 +44,45 @@ abstract class _SandboxTool extends BuiltinTool {
   @override
   ToolRisk get risk => ToolRisk.write;
 
+  /// Files to show the user after a run, read while the session is still open (the sandbox is shut
+  /// down when the call ends). [wanted] are paths the model asked for; the local runtime adds
+  /// whatever the program wrote to `/out`.
+  Future<({List<ToolFile> files, List<String> notes})> present(
+    SandboxSession session,
+    SandboxOutputs outputs,
+    List<String> wanted,
+  ) async {
+    final paths = <String>{...wanted, ...await session.newFiles()}.toList();
+    final files = <ToolFile>[];
+    final notes = <String>[];
+    for (final path in paths) {
+      if (files.length >= SandboxOutputs.maxFilesPerRun) {
+        notes.add('Only the first ${SandboxOutputs.maxFilesPerRun} files are shown.');
+        break;
+      }
+      try {
+        final bytes = await session.readFile(path);
+        files.add(await outputs.save(path, bytes));
+      } on ToolError catch (e) {
+        notes.add('$path could not be shown: ${e.message}');
+      } on FileSystemException catch (e) {
+        notes.add('$path could not be shown: ${e.message}');
+      }
+    }
+    return (files: files, notes: notes);
+  }
+
+  /// "Shown to the user: ..." for the model, or '' when nothing was shown.
+  String shownSummary(List<ToolFile> files, List<String> notes) {
+    final lines = <String>[
+      if (files.isNotEmpty)
+        'Shown to the user in the chat (they can open, share or save): '
+            '${files.map((f) => '${f.name} (${f.mime}, ${f.bytes} bytes)').join(', ')}.',
+      ...notes,
+    ];
+    return lines.isEmpty ? '' : '\n${lines.join('\n')}';
+  }
+
   /// Runs [action] in the shared session. The run ends afterwards, even on failure, so the
   /// manager can apply its keep-warm policy.
   Future<T> inSession<T>(Future<T> Function(SandboxSession session) action) async {
@@ -56,7 +96,9 @@ abstract class _SandboxTool extends BuiltinTool {
 }
 
 class _PythonTool extends _SandboxTool {
-  _PythonTool(super.manager);
+  _PythonTool(super.manager, this.outputs);
+
+  final SandboxOutputs outputs;
 
   @override
   String get name => 'sandbox_python';
@@ -67,12 +109,17 @@ class _PythonTool extends _SandboxTool {
       'The sandbox can reach the public internet: remote sandboxes have full network and pip; the local '
       'sandbox (standard library only, no pip) can fetch http(s) URLs with urllib.request, for example '
       'urllib.request.urlopen(url).read(), but cannot reach localhost or home-network addresses. '
-      'Files written with sandbox_write_file are visible to later runs on remote sandboxes.';
+      'To show a picture, chart or file to the user, write it to disk and the chat displays it with '
+      'open, share and save actions: in the local sandbox write under /out (everything written there '
+      'is shown automatically; standard library only, so build PNGs with zlib/struct or write SVG, CSV, '
+      'HTML, JSON); on a remote sandbox save the file anywhere (for example matplotlib savefig) and list '
+      'its path in show_files. Files written with sandbox_write_file are visible to later runs on remote sandboxes.';
 
   @override
   Map<String, dynamic> get parameters => objectSchema({
     'code': stringProp('Python source to run.'),
     'timeout_s': intProp('Time limit in seconds. Default $_defaultTimeoutS, maximum $_maxTimeoutS.'),
+    'show_files': _showFilesProp,
   }, required: ['code']);
 
   @override
@@ -85,16 +132,23 @@ class _PythonTool extends _SandboxTool {
     if (code is! String || code.trim().isEmpty) throw const ToolError('code is required.');
     final timeout = _timeout(args);
     final watch = Stopwatch()..start();
-    final result = await inSession((s) => s.runPython(code, timeout: timeout));
+    final wanted = _showFiles(args);
+    final run = await inSession((s) async {
+      final result = await s.runPython(code, timeout: timeout);
+      return (result: result, shown: await present(s, outputs, wanted));
+    });
     return ToolResult(
-      _formatExec(result, watch.elapsed),
-      isError: result.exitCode != 0,
+      _formatExec(run.result, watch.elapsed) + shownSummary(run.shown.files, run.shown.notes),
+      isError: run.result.exitCode != 0,
+      files: run.shown.files,
     );
   }
 }
 
 class _ShellTool extends _SandboxTool {
-  _ShellTool(super.manager);
+  _ShellTool(super.manager, this.outputs);
+
+  final SandboxOutputs outputs;
 
   @override
   String get name => 'sandbox_shell';
@@ -108,6 +162,7 @@ class _ShellTool extends _SandboxTool {
   Map<String, dynamic> get parameters => objectSchema({
     'command': stringProp('Shell command to run.'),
     'timeout_s': intProp('Time limit in seconds. Default $_defaultTimeoutS, maximum $_maxTimeoutS.'),
+    'show_files': _showFilesProp,
   }, required: ['command']);
 
   @override
@@ -122,10 +177,15 @@ class _ShellTool extends _SandboxTool {
     }
     final timeout = _timeout(args);
     final watch = Stopwatch()..start();
-    final result = await inSession((s) => s.runShell(command, timeout: timeout));
+    final wanted = _showFiles(args);
+    final run = await inSession((s) async {
+      final result = await s.runShell(command, timeout: timeout);
+      return (result: result, shown: await present(s, outputs, wanted));
+    });
     return ToolResult(
-      _formatExec(result, watch.elapsed),
-      isError: result.exitCode != 0,
+      _formatExec(run.result, watch.elapsed) + shownSummary(run.shown.files, run.shown.notes),
+      isError: run.result.exitCode != 0,
+      files: run.shown.files,
     );
   }
 }
@@ -275,6 +335,22 @@ class _TranscribeTool extends _SandboxTool {
       return ToolResult(text.isEmpty ? '(no speech found)' : text);
     });
   }
+}
+
+const _showFilesProp = {
+  'type': 'array',
+  'items': {'type': 'string'},
+  'description': 'Paths of files made by this run to show to the user (pictures, charts, CSV, PDF). '
+      'Up to 8, 20 MB each.',
+};
+
+List<String> _showFiles(Map<String, dynamic> args) {
+  final raw = args['show_files'];
+  if (raw is! List) return const [];
+  return [
+    for (final item in raw)
+      if (item is String && item.trim().isNotEmpty) item.trim(),
+  ];
 }
 
 Duration _timeout(Map<String, dynamic> args) {

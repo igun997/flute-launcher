@@ -156,6 +156,8 @@ pub struct WasmRunRequest {
   pub max_memory_mb: u32,
   /// Lets a `python -c <code>` program reach the network through Dart (see `wasm::NetLink`).
   pub network: bool,
+  /// A host directory the program sees as `/out`, read and write. Empty means no files.
+  pub files_dir: String,
 }
 
 /// Captured output is capped at 1 MiB per stream. `error` is empty unless the run could not

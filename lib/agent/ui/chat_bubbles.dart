@@ -8,7 +8,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 
 import '../../app/theme.dart';
+import '../../native/flute_native.dart';
 import '../runtime/agent_runtime.dart';
+import '../sandbox/sandbox_outputs.dart';
+import '../tools/agent_tool.dart';
 import 'image_canvas.dart';
 
 /// Chat rows: user bubbles, Markdown replies, reasoning, tool cards and small pieces shared with
@@ -17,6 +20,89 @@ import 'image_canvas.dart';
 /// A short UI transition, instant when the system asks for reduced motion.
 Duration motion(BuildContext context, int milliseconds) =>
     MediaQuery.disableAnimationsOf(context) ? Duration.zero : Duration(milliseconds: milliseconds);
+
+/// A byte count for people: "512 B", "3.0 KB", "1.2 MB".
+String formatBytes(int bytes) {
+  final b = bytes < 0 ? 0 : bytes;
+  if (b < 1024) return '$b B';
+  if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(1)} KB';
+  return '${(b / (1024 * 1024)).toStringAsFixed(1)} MB';
+}
+
+/// A picture the tool left in app storage, as a file the chat can open, save and share.
+ToolFile pictureFile(String path) {
+  final name = path.substring(path.lastIndexOf('/') + 1);
+  return ToolFile(path: path, name: name, mime: SandboxOutputs.mimeFor(name), bytes: 0);
+}
+
+/// The file's type: its own MIME type, else one worked out from the extension.
+String _mimeOf(ToolFile file) => file.mime.isEmpty ? SandboxOutputs.mimeFor(file.name) : file.mime;
+
+IconData _fileIcon(ToolFile file) {
+  final mime = _mimeOf(file);
+  if (mime.startsWith('image/')) return Icons.image_outlined;
+  if (mime.startsWith('video/')) return Icons.movie_outlined;
+  if (mime.startsWith('audio/')) return Icons.audiotrack_outlined;
+  if (mime == 'application/pdf') return Icons.picture_as_pdf_outlined;
+  if (mime == 'application/zip') return Icons.folder_zip_outlined;
+  if (mime == 'text/csv' || mime == 'text/tab-separated-values' || mime.contains('spreadsheet')) {
+    return Icons.table_chart_outlined;
+  }
+  if (mime.startsWith('text/') || mime.contains('json') || mime.contains('xml') || mime.contains('wordprocessing')) {
+    return Icons.description_outlined;
+  }
+  return Icons.insert_drive_file_outlined;
+}
+
+void _notice(ScaffoldMessengerState messenger, String text, {SnackBarAction? action}) {
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text), action: action));
+}
+
+/// Opens [file] in another app. When none can, says so and offers Share instead.
+Future<void> openToolFile(ScaffoldMessengerState messenger, ToolFile file) async {
+  final opened = await FluteNative.openFile(path: file.path, mime: _mimeOf(file));
+  if (opened) return;
+  _notice(
+    messenger,
+    'No app can open this file',
+    action: SnackBarAction(label: 'Share', onPressed: () => unawaited(shareToolFile(messenger, file))),
+  );
+}
+
+/// Copies [file] into Downloads and says under which name, or that it could not.
+Future<void> saveToolFile(ScaffoldMessengerState messenger, ToolFile file) async {
+  final saved = await FluteNative.saveToDownloads(path: file.path, name: file.name, mime: _mimeOf(file));
+  _notice(messenger, saved == null ? 'Could not save' : 'Saved to Downloads as $saved');
+}
+
+/// Sends [file] to the system share chooser.
+Future<void> shareToolFile(ScaffoldMessengerState messenger, ToolFile file) async {
+  final shared = await FluteNative.shareFile(path: file.path, mime: _mimeOf(file), name: file.name);
+  if (!shared) _notice(messenger, 'Could not share this file');
+}
+
+enum _PictureAction { save, share }
+
+/// The small menu a long-press on a picture opens: Save or Share.
+Future<void> showPictureMenu(BuildContext context, Offset at, ToolFile file) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final choice = await showMenu<_PictureAction>(
+    context: context,
+    position: RelativeRect.fromRect(Rect.fromLTWH(at.dx, at.dy, 0, 0), Offset.zero & MediaQuery.sizeOf(context)),
+    color: FluteColors.surfaceHigh,
+    items: const [
+      PopupMenuItem(value: _PictureAction.save, child: Text('Save')),
+      PopupMenuItem(value: _PictureAction.share, child: Text('Share')),
+    ],
+  );
+  if (choice == _PictureAction.save) {
+    await saveToolFile(messenger, file);
+  } else if (choice == _PictureAction.share) {
+    await shareToolFile(messenger, file);
+  }
+}
 
 /// Plays the arrival of a new row. Skipped when the system asks for reduced motion.
 Widget enterMessage(BuildContext context, Widget child) {
@@ -435,7 +521,7 @@ class _ToolCardState extends State<ToolCard> {
                     ),
                 ],
               ),
-              if (item.makesImages)
+              if (item.makesImages || item.images.isNotEmpty || item.files.isNotEmpty)
                 AnimatedSize(
                   duration: motion(context, 260),
                   curve: Curves.easeOutCubic,
@@ -465,6 +551,70 @@ class _ToolCardState extends State<ToolCard> {
                         ),
                       )
                     : const SizedBox(width: double.infinity),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A file the tool made, as a quiet row. Tap opens it in another app; the two icons save it to
+/// Downloads or share it.
+class ToolFileRow extends StatelessWidget {
+  const ToolFileRow({super.key, required this.file});
+
+  final ToolFile file;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: FluteColors.surfaceHigh,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: FluteColors.line),
+      ),
+      child: InkWell(
+        onTap: () => unawaited(openToolFile(ScaffoldMessenger.of(context), file)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 2, 6),
+          child: Row(
+            children: [
+              Icon(_fileIcon(file), size: 20, color: FluteColors.muted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      file.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13.5, height: 1.3),
+                    ),
+                    Text(
+                      formatBytes(file.bytes),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: FluteColors.muted, fontSize: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Save to Downloads',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.download_outlined, size: 20, color: FluteColors.muted),
+                onPressed: () => unawaited(saveToolFile(ScaffoldMessenger.of(context), file)),
+              ),
+              IconButton(
+                tooltip: 'Share',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.share_outlined, size: 20, color: FluteColors.muted),
+                onPressed: () => unawaited(shareToolFile(ScaffoldMessenger.of(context), file)),
               ),
             ],
           ),

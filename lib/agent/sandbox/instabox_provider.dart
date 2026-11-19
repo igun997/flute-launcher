@@ -306,6 +306,9 @@ class _InstaboxSession implements SandboxSession {
   Future<List<int>> readFile(String path) => _provider._readFile(_machineId, path);
 
   @override
+  Future<List<String>> newFiles() async => const [];
+
+  @override
   Future<void> close() async {
     if (_closed) return;
     if (_ephemeral) {

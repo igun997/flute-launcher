@@ -141,6 +141,17 @@ class FluteNative(private val context: Context) : MethodChannel.MethodCallHandle
                     val path = call.string("path")
                     inBackground(result) { videoInfo(path) }
                 }
+                // Files the agent made. FluteFiles refuses any path outside the app's files directory.
+                "shareFile" -> result.success(
+                    FluteFiles.share(context, call.string("path"), call.optionalString("mime"), call.optionalString("name")),
+                )
+                "openFile" -> result.success(FluteFiles.open(context, call.string("path"), call.optionalString("mime")))
+                "saveToDownloads" -> {
+                    val path = call.string("path")
+                    val name = call.string("name")
+                    val mime = call.optionalString("mime")
+                    inBackground(result) { FluteFiles.saveToDownloads(context, path, name, mime) }
+                }
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
@@ -177,6 +188,8 @@ class FluteNative(private val context: Context) : MethodChannel.MethodCallHandle
 
     private fun MethodCall.stringList(key: String): List<String> =
         (argument<List<*>>(key) ?: emptyList<Any?>()).filterIsInstance<String>()
+
+    private fun MethodCall.optionalString(key: String): String = argument<String>(key).orEmpty()
 
     /**
      * JPEG frames evenly spaced through the video, longest edge at most [maxEdge]. Null when the
