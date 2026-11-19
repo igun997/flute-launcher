@@ -5,6 +5,7 @@ import '../app/theme.dart';
 import '../core/mode_engine.dart';
 import '../core/models.dart';
 import '../native/flute_native.dart';
+import 'press_scale.dart';
 import 'settings_page.dart';
 
 /// Text-only app list grouped by category, with search.
@@ -52,19 +53,18 @@ class _AppsPageState extends State<AppsPage> {
   @override
   Widget build(BuildContext context) {
     final flute = widget.flute;
+    final reduced = MediaQuery.disableAnimationsOf(context);
     return SafeArea(
       child: ListenableBuilder(
         listenable: Listenable.merge([flute.repo, flute.modes, _query]),
         builder: (context, _) {
           final searching = _query.text.trim().isNotEmpty;
           final groups = group(flute.repo.apps, flute.modes.ruleFor, _query.text);
-          // Flat rows (a category header, then its apps) so the list builds lazily.
-          final rows = <Object>[
-            for (final (cat, apps) in groups) ...[
-              cat,
-              if (searching || !_collapsed.contains(cat)) ...apps,
-            ],
-          ];
+          final emptyText = flute.repo.loading
+              ? 'Loading apps'
+              : searching
+                  ? 'No apps match'
+                  : 'No apps found';
           return Column(
             children: [
               Padding(
@@ -79,12 +79,7 @@ class _AppsPageState extends State<AppsPage> {
               ),
               Expanded(
                 child: groups.isEmpty
-                    ? Center(
-                        child: Text(
-                          flute.repo.loading ? 'Loading apps' : 'No apps found',
-                          style: const TextStyle(color: FluteColors.muted),
-                        ),
-                      )
+                    ? Center(child: Text(emptyText, style: const TextStyle(color: FluteColors.muted, fontSize: 16)))
                     : NotificationListener<OverscrollNotification>(
                         // Dragging down past the top of the list returns to the home page.
                         onNotification: (n) {
@@ -92,29 +87,52 @@ class _AppsPageState extends State<AppsPage> {
                           return false;
                         },
                         child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
+                          padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
                           physics: const ClampingScrollPhysics(),
-                          itemCount: rows.length,
+                          itemCount: groups.length,
                           itemBuilder: (context, i) {
-                            final row = rows[i];
-                            if (row is AppCategory) {
-                              final apps = groups.firstWhere((g) => g.$1 == row).$2;
-                              return _Header(
-                                category: row,
-                                count: apps.length,
-                                collapsed: !searching && _collapsed.contains(row),
-                                rule: flute.modes.current.ruleFor(row),
-                                onTap: () => setState(() {
-                                  _collapsed.contains(row) ? _collapsed.remove(row) : _collapsed.add(row);
-                                }),
-                              );
-                            }
-                            final app = row as FluteApp;
-                            return _AppRow(
-                              app: app,
-                              rule: flute.modes.ruleFor(app),
-                              onTap: () => FluteNative.launchApp(app.package),
-                              onLongPress: () => showAppSheet(context, flute, app),
+                            final (cat, apps) = groups[i];
+                            final collapsed = !searching && _collapsed.contains(cat);
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _Header(
+                                  category: cat,
+                                  count: apps.length,
+                                  collapsed: collapsed,
+                                  rule: flute.modes.current.ruleFor(cat),
+                                  onTap: () => setState(() {
+                                    if (_collapsed.contains(cat)) {
+                                      _collapsed.remove(cat);
+                                    } else {
+                                      _collapsed.add(cat);
+                                    }
+                                  }),
+                                ),
+                                ClipRect(
+                                  child: AnimatedSize(
+                                    duration: reduced ? Duration.zero : const Duration(milliseconds: 240),
+                                    curve: Curves.easeOutCubic,
+                                    alignment: Alignment.topCenter,
+                                    child: collapsed
+                                        ? const SizedBox(width: double.infinity)
+                                        : Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              for (final app in apps)
+                                                _AppRow(
+                                                  app: app,
+                                                  rule: flute.modes.ruleFor(app),
+                                                  onTap: () => FluteNative.launchApp(app.package),
+                                                  onLongPress: () => showAppSheet(context, flute, app),
+                                                ),
+                                            ],
+                                          ),
+                                  ),
+                                ),
+                              ],
                             );
                           },
                         ),
@@ -160,23 +178,41 @@ class _Header extends StatelessWidget {
       Rule.lock => '  ·  paused',
       Rule.hide => '  ·  hidden',
     };
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
-        child: Row(
-          children: [
-            Text(
-              '${category.label.toUpperCase()}  $count$note',
-              style: TextStyle(
-                color: rule == Rule.show ? FluteColors.muted : FluteColors.warn,
-                fontSize: 11,
-                letterSpacing: 1.2,
-              ),
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    return Semantics(
+      button: true,
+      expanded: !collapsed,
+      label: '${category.label}, $count apps$note',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: SizedBox(
+            height: 44,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${category.label.toUpperCase()}  $count$note',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: rule == Rule.show ? FluteColors.muted : FluteColors.warn,
+                      fontSize: 12,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: collapsed ? -0.25 : 0,
+                  duration: reduced ? Duration.zero : const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  child: const Icon(Icons.expand_more, color: FluteColors.muted, size: 20),
+                ),
+              ],
             ),
-            const Spacer(),
-            Text(collapsed ? 'show' : '', style: const TextStyle(color: FluteColors.muted, fontSize: 11)),
-          ],
+          ),
         ),
       ),
     );
@@ -192,11 +228,12 @@ class _AppRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return PressScale(
       onTap: onTap,
       onLongPress: onLongPress,
+      scale: 0.98,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text(
           app.label,
           maxLines: 1,
@@ -232,9 +269,9 @@ Future<void> showAppSheet(BuildContext context, Flute flute, FluteApp app) {
               children: [
                 Text(current.label, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w300)),
                 const SizedBox(height: 4),
-                Text(current.package, style: const TextStyle(color: FluteColors.muted, fontSize: 12)),
+                Text(current.package, style: const TextStyle(color: FluteColors.muted, fontSize: 13)),
                 const SizedBox(height: 18),
-                const Text('CATEGORY', style: TextStyle(color: FluteColors.muted, fontSize: 11, letterSpacing: 1.2)),
+                const Text('CATEGORY', style: TextStyle(color: FluteColors.muted, fontSize: 12, letterSpacing: 1.2)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -265,7 +302,7 @@ Future<void> showAppSheet(BuildContext context, Flute flute, FluteApp app) {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Always allowed'),
-                  subtitle: const Text('Ignores mode rules'),
+                  subtitle: const Text('Ignores mode rules', style: TextStyle(fontSize: 13)),
                   value: allowed || fixed,
                   onChanged: fixed ? null : (v) => flute.modes.setAllowed(app.package, v),
                 ),

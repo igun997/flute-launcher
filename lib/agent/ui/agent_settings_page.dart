@@ -17,7 +17,7 @@ import 'model_picker.dart';
 import 'settings_widgets.dart';
 import 'skills_settings.dart';
 
-/// Agent settings: providers, built-in tools, MCP servers and skills.
+/// Agent settings hub: one row per area. Each row shows its current choice and opens its own page.
 class AgentSettingsPage extends StatefulWidget {
   const AgentSettingsPage({super.key, required this.flute});
   final Flute flute;
@@ -27,11 +27,57 @@ class AgentSettingsPage extends StatefulWidget {
 }
 
 class _AgentSettingsPageState extends State<AgentSettingsPage> {
+  StreamSubscription<void>? _toolChanges;
+
   @override
   void initState() {
     super.initState();
     unawaited(widget.flute.mcp.connectEnabled());
+    // Built-in tools are not a ChangeNotifier; their changes arrive as a stream.
+    _toolChanges = widget.flute.builtins.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
   }
+
+  @override
+  void dispose() {
+    unawaited(_toolChanges?.cancel());
+    super.dispose();
+  }
+
+  /// Opens a sub-page and refreshes the status lines when it closes.
+  Future<void> _open(WidgetBuilder builder) async {
+    await Navigator.of(context).push(settingsRoute<void>(context, builder));
+    if (mounted) setState(() {});
+  }
+
+  String _providerStatus(Flute flute) {
+    final active = flute.providers.active;
+    if (active == null) return 'Not set up';
+    final model = active.model;
+    return model == null || model.isEmpty ? active.label : '${active.label} - $model';
+  }
+
+  String _toolsStatus(Flute flute) {
+    final on = _groups.where((g) => flute.builtins.isEnabled(g.key)).length;
+    if (on == 0) return 'All off';
+    return '$on ${on == 1 ? 'tool' : 'tools'} on';
+  }
+
+  String _sandboxStatus(Flute flute) {
+    final id = flute.sandbox.preferredProviderId;
+    for (final provider in flute.sandbox.providers) {
+      if (provider.id == id) return provider.label;
+    }
+    return 'Not chosen';
+  }
+
+  List<Widget> _separated(List<Widget> rows) => [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const Divider(height: 1, color: FluteColors.line),
+          rows[i],
+        ],
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -43,36 +89,90 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
         scrolledUnderElevation: 0,
         title: const Text('Agent settings', style: TextStyle(fontWeight: FontWeight.w300)),
       ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.paddingOf(context).bottom + 24),
-        children: [
-          const SettingsLabel('PROVIDER'),
-          _ProviderSection(flute: flute),
-          const SizedBox(height: 20),
-          const SettingsLabel('TOOLS'),
-          _ToolsSection(flute: flute),
-          const SizedBox(height: 20),
-          const SettingsLabel('ROUTINES'),
-          RoutinesSection(flute: flute),
-          const SizedBox(height: 20),
-          const SettingsLabel('VOICE'),
-          VoiceSettingsSection(voice: flute.voice),
-          const SizedBox(height: 20),
-          const SettingsLabel('IMAGES'),
-          ImageSettingsSection(flute: flute),
-          const SizedBox(height: 20),
-          const SettingsLabel('SANDBOX'),
-          SandboxSettingsSection(manager: flute.sandbox),
-          const SizedBox(height: 20),
-          const SettingsLabel('WEB SEARCH'),
-          WebSettingsSection(flute: flute),
-          const SizedBox(height: 20),
-          const SettingsLabel('MCP SERVERS'),
-          McpServersSection(flute: flute),
-          const SizedBox(height: 20),
-          const SettingsLabel('SKILLS'),
-          SkillsSection(flute: flute),
-        ],
+      body: ListenableBuilder(
+        listenable: Listenable.merge([
+          flute.providers,
+          flute.routines,
+          flute.voice,
+          flute.imageSettings,
+          flute.sandbox,
+          flute.web,
+          flute.mcp,
+          flute.skills,
+        ]),
+        builder: (context, _) => ListView(
+          padding: settingsPagePadding(context),
+          children: _separated([
+            SettingsHubRow(
+              icon: Icons.auto_awesome_outlined,
+              title: 'Provider',
+              status: _providerStatus(flute),
+              onTap: () => _open(
+                (_) => SettingsSubPage(title: 'Provider', children: [_ProviderSection(flute: flute)]),
+              ),
+            ),
+            SettingsHubRow(
+              icon: Icons.build_outlined,
+              title: 'Tools',
+              status: _toolsStatus(flute),
+              onTap: () => _open(
+                (_) => SettingsSubPage(title: 'Tools', children: [_ToolsSection(flute: flute)]),
+              ),
+            ),
+            RoutinesSection(flute: flute),
+            SettingsHubRow(
+              icon: Icons.record_voice_over_outlined,
+              title: 'Voice',
+              status: voiceLanguageLabel(flute.voice.language),
+              onTap: () => _open(
+                (_) => SettingsSubPage(title: 'Voice', children: [VoiceSettingsSection(voice: flute.voice)]),
+              ),
+            ),
+            SettingsHubRow(
+              icon: Icons.image_outlined,
+              title: 'Images',
+              status: flute.imageSettings.model ?? 'Automatic',
+              onTap: () => _open(
+                (_) => SettingsSubPage(title: 'Images', children: [ImageSettingsSection(flute: flute)]),
+              ),
+            ),
+            SettingsHubRow(
+              icon: Icons.terminal,
+              title: 'Sandbox',
+              status: _sandboxStatus(flute),
+              onTap: () => _open(
+                (_) => SettingsSubPage(
+                  title: 'Sandbox',
+                  children: [SandboxSettingsSection(manager: flute.sandbox)],
+                ),
+              ),
+            ),
+            SettingsHubRow(
+              icon: Icons.travel_explore,
+              title: 'Web search',
+              status: flute.web.provider?.label ?? 'Not set',
+              onTap: () => _open(
+                (_) => SettingsSubPage(title: 'Web search', children: [WebSettingsSection(flute: flute)]),
+              ),
+            ),
+            SettingsHubRow(
+              icon: Icons.hub_outlined,
+              title: 'MCP servers',
+              status: '${flute.mcp.servers.length} ${flute.mcp.servers.length == 1 ? 'server' : 'servers'}',
+              onTap: () => _open(
+                (_) => SettingsSubPage(title: 'MCP servers', children: [McpServersSection(flute: flute)]),
+              ),
+            ),
+            SettingsHubRow(
+              icon: Icons.extension_outlined,
+              title: 'Skills',
+              status: '${flute.skills.installed.length} ${flute.skills.installed.length == 1 ? 'skill' : 'skills'}',
+              onTap: () => _open(
+                (_) => SettingsSubPage(title: 'Skills', children: [SkillsSection(flute: flute)]),
+              ),
+            ),
+          ]),
+        ),
       ),
     );
   }
@@ -168,22 +268,14 @@ class _ProviderSectionState extends State<_ProviderSection> {
 
   Future<void> _remove(ProviderProfile profile) async {
     final oauth = profile.auth != ProviderAuth.apiKey;
-    final sure = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Remove ${profile.label}?'),
-        content: Text(
-          oauth
-              ? 'Its sign-in is deleted from this phone. You can sign in again later.'
-              : 'Its saved key is deleted from this phone.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
-        ],
-      ),
+    final sure = await confirmRemove(
+      context,
+      title: 'Remove ${profile.label}?',
+      message: oauth
+          ? 'Its sign-in is deleted from this phone. You can sign in again later.'
+          : 'Its saved key is deleted from this phone.',
     );
-    if (sure != true) return;
+    if (!sure) return;
     await _run('Removing...', () => _store.remove(profile.id));
   }
 

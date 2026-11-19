@@ -21,6 +21,9 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
   String? _busy;
   String? _error;
 
+  /// The provider whose block started the latest action. Null means the top-level choice.
+  WebProvider? _owner;
+
   @override
   void dispose() {
     for (final c in _fields.values) {
@@ -29,9 +32,10 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
     super.dispose();
   }
 
-  Future<void> _run(String label, Future<void> Function() action) async {
+  Future<void> _run(String label, Future<void> Function() action, {WebProvider? owner}) async {
     setState(() {
       _busy = label;
+      _owner = owner;
       _error = null;
     });
     try {
@@ -52,29 +56,24 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
   Future<void> _save(WebProvider p) => _run('Checking key...', () async {
     await widget.flute.web.saveKey(p, _fields[p]!.text);
     _fields[p]!.clear();
-  });
+  }, owner: p);
 
   Future<void> _openKeyPage(WebProvider p) => _run(
     'Opening...',
     () async {
       await launchUrl(Uri.parse(p.keyUrl), mode: LaunchMode.externalApplication);
     },
+    owner: p,
   );
 
   Future<void> _remove(WebProvider p) async {
-    final sure = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Remove the ${p.label} key?'),
-        content: const Text('Web search stops working if no other key is saved.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
-        ],
-      ),
+    final sure = await confirmRemove(
+      context,
+      title: 'Remove the ${p.label} key?',
+      message: 'Web search stops working if no other key is saved.',
     );
-    if (sure != true) return;
-    await _run('Removing...', () => widget.flute.web.removeKey(p));
+    if (!sure) return;
+    await _run('Removing...', () => widget.flute.web.removeKey(p), owner: p);
   }
 
   @override
@@ -87,7 +86,6 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SettingsLabel('Web search'),
             const Padding(
               padding: EdgeInsets.only(bottom: 8),
               child: Text(
@@ -95,8 +93,8 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
                 style: settingsMuted,
               ),
             ),
-            if (_busy != null) ProgressLine(_busy!),
-            if (_error != null) ErrorLine(_error!),
+            if (_owner == null && _busy != null) ProgressLine(_busy!),
+            if (_owner == null && _error != null) ErrorLine(_error!),
             SegmentedButton<WebProvider>(
               emptySelectionAllowed: true,
               segments: [
@@ -127,7 +125,7 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
             children: [
               Text(p.label, style: const TextStyle(color: FluteColors.text, fontSize: 15)),
               const SizedBox(width: 8),
-              if (saved) const SettingsTag('Saved'),
+              if (saved) const CalmTag('Saved'),
             ],
           ),
           const SizedBox(height: 8),
@@ -137,7 +135,8 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
             autocorrect: false,
             enableSuggestions: false,
             decoration: InputDecoration(
-              hintText: saved ? 'Paste a new key to replace it' : 'Paste your ${p.label} API key',
+              labelText: '${p.label} API key',
+              hintText: saved ? 'Paste a new key to replace it' : 'Paste it here',
               isDense: true,
             ),
           ),
@@ -155,6 +154,8 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
               ],
             ],
           ),
+          if (_owner == p && _busy != null) ProgressLine(_busy!),
+          if (_owner == p && _error != null) ErrorLine(_error!),
         ],
       ),
     );

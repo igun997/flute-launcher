@@ -12,6 +12,7 @@ import '../native/flute_native.dart';
 import '../pets/pet_library.dart';
 import '../weather/weather_service.dart';
 import '../widgets/weather_chip.dart';
+import 'press_scale.dart';
 
 /// Opens Settings as a full page.
 Future<void> openSettings(BuildContext context, Flute flute) {
@@ -19,6 +20,11 @@ Future<void> openSettings(BuildContext context, Flute flute) {
     MaterialPageRoute<void>(builder: (_) => SettingsPage(flute: flute)),
   );
 }
+
+Duration _motion(BuildContext context, int ms) =>
+    MediaQuery.disableAnimationsOf(context) ? Duration.zero : Duration(milliseconds: ms);
+
+const _subtle = TextStyle(color: FluteColors.muted, fontSize: 13);
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.flute});
@@ -34,82 +40,82 @@ class SettingsPage extends StatelessWidget {
         title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w300)),
       ),
       body: ListView(
-        padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.paddingOf(context).bottom + 24),
+        padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.paddingOf(context).bottom + 32),
         children: [
-          const _Label('SETUP'),
-          ListenableBuilder(
-            listenable: Listenable.merge([flute.notificationAccess, flute.usageAccess, flute.dndAccess, flute.defaultHome]),
-            builder: (context, _) => Column(
-              children: [
-                _Access(
-                  title: 'Default home app',
-                  detail: 'Flute is your home screen. The Recents button still works: Android provides it through '
-                      "Samsung's launcher, so leave that one enabled.",
-                  granted: flute.defaultHome.value,
-                  onOpen: FluteNative.openHomeSettings,
-                ),
-                _Access(
-                  title: 'Notification access',
-                  detail: 'Recent WhatsApp and SMS, and the lockscreen',
-                  granted: flute.notificationAccess.value,
-                  onOpen: FluteNative.openNotificationAccessSettings,
-                ),
-                _Access(
-                  title: 'Usage access',
-                  detail: 'Pause screen and time by category',
-                  granted: flute.usageAccess.value,
-                  onOpen: FluteNative.openUsageAccessSettings,
-                ),
-                FutureBuilder<bool>(
-                  future: FluteNative.hasOverlayPermission(),
-                  builder: (context, snap) => _Access(
-                    title: 'Display over other apps',
-                    detail: 'Lets the pause screen and lockscreen appear on top',
-                    granted: snap.data ?? false,
-                    onOpen: FluteNative.openOverlaySettings,
+          _Section('SETUP', [
+            ListenableBuilder(
+              listenable: Listenable.merge([flute.notificationAccess, flute.usageAccess, flute.dndAccess, flute.defaultHome]),
+              builder: (context, _) => Column(
+                children: [
+                  _Access(
+                    title: 'Default home app',
+                    detail: 'Flute is your home screen. The Recents button still works: Android provides it through '
+                        "Samsung's launcher, so leave that one enabled.",
+                    granted: flute.defaultHome.value,
+                    onOpen: FluteNative.openHomeSettings,
                   ),
-                ),
-                _Access(
-                  title: 'Do Not Disturb access',
-                  detail: 'Silences calls and alerts (alarms still ring) in Sleep mode',
-                  granted: flute.dndAccess.value,
-                  onOpen: FluteNative.openPolicyAccessSettings,
-                ),
-              ],
+                  _Access(
+                    title: 'Notification access',
+                    detail: 'Recent WhatsApp and SMS, and the lockscreen',
+                    granted: flute.notificationAccess.value,
+                    onOpen: FluteNative.openNotificationAccessSettings,
+                  ),
+                  _Access(
+                    title: 'Usage access',
+                    detail: 'Pause screen and time by category',
+                    granted: flute.usageAccess.value,
+                    onOpen: FluteNative.openUsageAccessSettings,
+                  ),
+                  FutureBuilder<bool>(
+                    future: FluteNative.hasOverlayPermission(),
+                    builder: (context, snap) => _Access(
+                      title: 'Display over other apps',
+                      detail: 'Lets the pause screen and lockscreen appear on top',
+                      granted: snap.data ?? false,
+                      onOpen: FluteNative.openOverlaySettings,
+                    ),
+                  ),
+                  _Access(
+                    title: 'Do Not Disturb access',
+                    detail: 'Silences calls and alerts (alarms still ring) in Sleep mode',
+                    granted: flute.dndAccess.value,
+                    onOpen: FluteNative.openPolicyAccessSettings,
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          const _Label('LOCKSCREEN'),
-          ListenableBuilder(
-            listenable: flute.lockSettings,
-            builder: (context, _) => Column(
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Flute lockscreen'),
-                  subtitle: const Text(
-                    'Shows the clock, weather and your inbox when you wake the phone. Your PIN or fingerprint still unlocks it. '
-                    'Needs notification access and display over other apps.',
-                    style: TextStyle(color: FluteColors.muted, fontSize: 12),
+          ]),
+          _Section('LOCKSCREEN', [
+            ListenableBuilder(
+              listenable: flute.lockSettings,
+              builder: (context, _) => Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Flute lockscreen'),
+                    subtitle: const Text(
+                      'Shows the clock, weather and your inbox when you wake the phone. Your PIN or fingerprint still unlocks it. '
+                      'Needs notification access and display over other apps.',
+                      style: _subtle,
+                    ),
+                    value: flute.lockSettings.enabled,
+                    onChanged: flute.lockSettings.setEnabled,
                   ),
-                  value: flute.lockSettings.enabled,
-                  onChanged: flute.lockSettings.setEnabled,
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Show message previews'),
-                  subtitle: const Text(
-                    'Off by default: the lockscreen only shows counts and sender names until you unlock.',
-                    style: TextStyle(color: FluteColors.muted, fontSize: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Show message previews'),
+                    subtitle: const Text(
+                      'Off by default: the lockscreen only shows counts and sender names until you unlock.',
+                      style: _subtle,
+                    ),
+                    value: flute.lockSettings.showPreviews,
+                    onChanged: flute.lockSettings.setShowPreviews,
                   ),
-                  value: flute.lockSettings.showPreviews,
-                  onChanged: flute.lockSettings.setShowPreviews,
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                    onPressed: () => Navigator.of(context).push<void>(
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Preview lockscreen'),
+                    trailing: const Icon(Icons.chevron_right, color: FluteColors.muted),
+                    onTap: () => Navigator.of(context).push<void>(
                       MaterialPageRoute<void>(
                         builder: (ctx) => Scaffold(
                           backgroundColor: FluteColors.bg,
@@ -117,186 +123,186 @@ class SettingsPage extends StatelessWidget {
                         ),
                       ),
                     ),
-                    child: const Text('Preview lockscreen'),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          const _Label('WEATHER'),
-          ListenableBuilder(
-            listenable: flute.weather,
-            builder: (context, _) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(flute.weather.city.label),
-                  subtitle: Text(
-                    flute.weather.followLocation ? 'Following your location' : 'Set by hand',
-                    style: const TextStyle(color: FluteColors.muted, fontSize: 12),
-                  ),
-                  trailing: TextButton(
-                    onPressed: () => showWeatherLocation(context, flute.weather),
-                    child: const Text('Change'),
-                  ),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Follow my location'),
-                  subtitle: const Text(
-                    'Updates the weather city when you travel more than 5 km. Approximate location, only while Flute is open.',
-                    style: TextStyle(color: FluteColors.muted, fontSize: 12),
-                  ),
-                  value: flute.weather.followLocation,
-                  onChanged: (v) async {
-                    await flute.weather.setFollowLocation(v);
-                    if (v && !flute.weather.followLocation && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Could not get your location. Allow it, and check that Location is on.')),
-                      );
-                    }
-                  },
-                ),
-              ],
+          ]),
+          _Section('HOME', [
+            _Pets(flute: flute),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Restore default pins'),
+              onTap: () async {
+                final pins = resolveDefaultPins({for (final a in flute.repo.apps) a.package});
+                await flute.repo.setFavorites(pins);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Default pins restored')));
+                }
+              },
             ),
-          ),
-          const SizedBox(height: 20),
-          const _Label('CHARACTERS'),
-          _Pets(flute: flute),
-          const SizedBox(height: 20),
-          const _Label('GESTURES'),
-          ListenableBuilder(
-            listenable: Listenable.merge([flute.accessibilityOn, flute.wakeInfo]),
-            builder: (context, _) {
-              final wake = flute.wakeInfo.value;
-              return Column(
+          ]),
+          _Section('APPEARANCE', [_Appearance(flute: flute)]),
+          _Section('WEATHER', [
+            ListenableBuilder(
+              listenable: flute.weather,
+              builder: (context, _) => Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _Access(
-                    title: 'Double-tap to lock',
-                    detail: 'Double-tap an empty spot on Home to turn the screen off. Needs the Flute lock service in '
-                        'Accessibility; it can only lock the screen and cannot read anything on it.',
-                    granted: flute.accessibilityOn.value,
-                    onOpen: FluteNative.openAccessibilitySettings,
-                  ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Double-tap to wake'),
+                    title: Text(flute.weather.city.label),
                     subtitle: Text(
-                      wake.systemDoubleTapWake
-                          ? "Turned on in your phone's own settings, so tapping the dark screen twice wakes it."
-                          : "Turn it on in your phone's own motion settings to wake the screen by tapping it twice.",
-                      style: const TextStyle(color: FluteColors.muted, fontSize: 12),
+                      flute.weather.followLocation ? 'Following your location' : 'Set by hand',
+                      style: _subtle,
                     ),
-                    trailing: wake.systemDoubleTapWake
-                        ? const Text('On', style: TextStyle(color: FluteColors.accent))
-                        : TextButton(onPressed: FluteNative.openMotionSettings, child: const Text('Open')),
+                    trailing: TextButton(
+                      onPressed: () => showWeatherLocation(context, flute.weather),
+                      child: const Text('Change'),
+                    ),
                   ),
-                  if (wake.hasProximity)
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Wave to wake'),
-                      subtitle: const Text(
-                        'Backup for a broken power button: cover the top of the phone with your hand twice within two seconds '
-                        'while the screen is off. Uses a little battery.',
-                        style: TextStyle(color: FluteColors.muted, fontSize: 12),
-                      ),
-                      value: wake.waveToWake,
-                      onChanged: (v) async {
-                        await FluteNative.setWaveToWake(v);
-                        await flute.refreshPermissions();
-                      },
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Follow my location'),
+                    subtitle: const Text(
+                      'Updates the weather city when you travel more than 5 km. Approximate location, only while Flute is open.',
+                      style: _subtle,
                     ),
+                    value: flute.weather.followLocation,
+                    onChanged: (v) async {
+                      await flute.weather.setFollowLocation(v);
+                      if (v && !flute.weather.followLocation && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Could not get your location. Allow it, and check that Location is on.')),
+                        );
+                      }
+                    },
+                  ),
                 ],
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-          const _Label('FOCUS'),
-          ListenableBuilder(
-            listenable: flute.modes,
-            builder: (context, _) => Column(
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Do Not Disturb in Sleep mode'),
-                  subtitle: const Text(
-                    'Alarms only. Your previous setting returns when Sleep ends.',
-                    style: TextStyle(color: FluteColors.muted, fontSize: 12),
+              ),
+            ),
+          ]),
+          _Section('GESTURES', [
+            ListenableBuilder(
+              listenable: Listenable.merge([flute.accessibilityOn, flute.wakeInfo]),
+              builder: (context, _) {
+                final wake = flute.wakeInfo.value;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _Access(
+                      title: 'Double-tap to lock',
+                      detail: 'Double-tap an empty spot on Home to turn the screen off. Needs the Flute lock service in '
+                          'Accessibility; it can only lock the screen and cannot read anything on it.',
+                      granted: flute.accessibilityOn.value,
+                      onOpen: FluteNative.openAccessibilitySettings,
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Double-tap to wake'),
+                      subtitle: Text(
+                        wake.systemDoubleTapWake
+                            ? "Turned on in your phone's own settings, so tapping the dark screen twice wakes it."
+                            : "Turn it on in your phone's own motion settings to wake the screen by tapping it twice.",
+                        style: _subtle,
+                      ),
+                      trailing: wake.systemDoubleTapWake
+                          ? const Text('On', style: TextStyle(color: FluteColors.accent, fontSize: 15))
+                          : TextButton(onPressed: FluteNative.openMotionSettings, child: const Text('Open')),
+                    ),
+                    if (wake.hasProximity)
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Wave to wake'),
+                        subtitle: const Text(
+                          'Backup for a broken power button: cover the top of the phone with your hand twice within two seconds '
+                          'while the screen is off. Uses a little battery.',
+                          style: _subtle,
+                        ),
+                        value: wake.waveToWake,
+                        onChanged: (v) async {
+                          await FluteNative.setWaveToWake(v);
+                          await flute.refreshPermissions();
+                        },
+                      ),
+                  ],
+                );
+              },
+            ),
+          ]),
+          _Section('FOCUS', [
+            ListenableBuilder(
+              listenable: flute.modes,
+              builder: (context, _) => Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Do Not Disturb in Sleep mode'),
+                    subtitle: const Text(
+                      'Alarms only. Your previous setting returns when Sleep ends.',
+                      style: _subtle,
+                    ),
+                    value: flute.modes.dndInSleep,
+                    onChanged: flute.modes.setDndInSleep,
                   ),
-                  value: flute.modes.dndInSleep,
-                  onChanged: flute.modes.setDndInSleep,
-                ),
-                _Stepper(
-                  label: 'Pause before opening',
-                  value: flute.modes.pauseSeconds,
-                  unit: 's',
-                  min: 3,
-                  max: 30,
-                  step: 1,
-                  onChanged: (v) => flute.modes.setLockTimings(pause: v),
-                ),
-                _Stepper(
-                  label: 'Open anyway lasts',
-                  value: flute.modes.graceMinutes,
-                  unit: ' min',
-                  min: 1,
-                  max: 30,
-                  step: 1,
-                  onChanged: (v) => flute.modes.setLockTimings(grace: v),
-                ),
-              ],
+                  _Stepper(
+                    label: 'Pause before opening',
+                    value: flute.modes.pauseSeconds,
+                    unit: 's',
+                    min: 3,
+                    max: 30,
+                    step: 1,
+                    onChanged: (v) => flute.modes.setLockTimings(pause: v),
+                  ),
+                  _Stepper(
+                    label: 'Open anyway lasts',
+                    value: flute.modes.graceMinutes,
+                    unit: ' min',
+                    min: 1,
+                    max: 30,
+                    step: 1,
+                    onChanged: (v) => flute.modes.setLockTimings(grace: v),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          const _Label('SCHEDULES'),
-          _Schedules(flute: flute),
-          const SizedBox(height: 20),
-          const _Label('APPEARANCE'),
-          _Appearance(flute: flute),
-          const SizedBox(height: 20),
-          const _Label('HOME'),
-          TextButton(
-            style: TextButton.styleFrom(alignment: Alignment.centerLeft, padding: EdgeInsets.zero),
-            onPressed: () async {
-              final pins = resolveDefaultPins({for (final a in flute.repo.apps) a.package});
-              await flute.repo.setFavorites(pins);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Default pins restored')));
-              }
-            },
-            child: const Text('Restore default pins'),
-          ),
-          const SizedBox(height: 12),
-          const _Label('EMAIL'),
-          TextButton(
-            style: TextButton.styleFrom(alignment: Alignment.centerLeft, padding: EdgeInsets.zero),
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              builder: (_) => const EmailAccountsSheet(),
+          ]),
+          _Section('SCHEDULES', [_Schedules(flute: flute)]),
+          _Section('MAIL & DATA', [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Email accounts (Lark, Gmail, IMAP)'),
+              trailing: const Icon(Icons.chevron_right, color: FluteColors.muted),
+              onTap: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => const EmailAccountsSheet(),
+              ),
             ),
-            child: const Text('Email accounts (Lark, Gmail, IMAP)'),
-          ),
-          const SizedBox(height: 12),
-          const _Label('DATA'),
-          TextButton(
-            style: TextButton.styleFrom(alignment: Alignment.centerLeft, padding: EdgeInsets.zero),
-            onPressed: () async {
-              await FluteNative.clearRecentMessages();
-              await flute.refreshMessages();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Recent messages cleared')));
-              }
-            },
-            child: const Text('Clear recent messages'),
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onLongPress: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const BenchPage())),
-            child: const Text('Flute 0.1.0', style: TextStyle(color: FluteColors.muted, fontSize: 12)),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Clear recent messages'),
+              onTap: () async {
+                await FluteNative.clearRecentMessages();
+                await flute.refreshMessages();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Recent messages cleared')));
+                }
+              },
+            ),
+          ]),
+          Padding(
+            padding: const EdgeInsets.only(top: 32),
+            child: Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onLongPress: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const BenchPage())),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                  child: Text('Flute 0.1.0', style: _subtle),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -304,14 +310,27 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-class _Label extends StatelessWidget {
-  const _Label(this.text);
-  final String text;
+class _Section extends StatelessWidget {
+  const _Section(this.title, this.children);
+  final String title;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(text, style: const TextStyle(color: FluteColors.muted, fontSize: 11, letterSpacing: 1.2)),
+        padding: const EdgeInsets.only(top: 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                title,
+                style: const TextStyle(color: FluteColors.muted, fontSize: 12, letterSpacing: 1.2),
+              ),
+            ),
+            ...children,
+          ],
+        ),
       );
 }
 
@@ -327,10 +346,13 @@ class _Access extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(title),
-      subtitle: Text(detail, style: const TextStyle(color: FluteColors.muted, fontSize: 12)),
-      trailing: granted
-          ? const Text('On', style: TextStyle(color: FluteColors.accent))
-          : TextButton(onPressed: onOpen, child: const Text('Allow')),
+      subtitle: Text(detail, style: _subtle),
+      trailing: AnimatedSwitcher(
+        duration: _motion(context, 220),
+        child: granted
+            ? const Text('On', key: ValueKey('on'), style: TextStyle(color: FluteColors.accent, fontSize: 15))
+            : TextButton(key: const ValueKey('allow'), onPressed: onOpen, child: const Text('Allow')),
+      ),
     );
   }
 }
@@ -357,13 +379,18 @@ class _Stepper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(label)),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 16))),
         IconButton(
+          tooltip: 'Less',
           onPressed: value > min ? () => onChanged(value - step) : null,
           icon: const Icon(Icons.remove),
         ),
-        SizedBox(width: 56, child: Text('$value$unit', textAlign: TextAlign.center)),
+        SizedBox(
+          width: 64,
+          child: Text('$value$unit', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+        ),
         IconButton(
+          tooltip: 'More',
           onPressed: value < max ? () => onChanged(value + step) : null,
           icon: const Icon(Icons.add),
         ),
@@ -391,24 +418,29 @@ class _Schedules extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (list.isEmpty)
-              const Text('None yet. A schedule switches mode automatically.', style: TextStyle(color: FluteColors.muted, fontSize: 13)),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text('None yet. A schedule switches mode automatically.', style: _subtle),
+              ),
             for (var i = 0; i < list.length; i++)
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text('${Mode.byId(list[i].modeId).name}  ${fmt(list[i].startMinute)} to ${fmt(list[i].endMinute)}'),
                 subtitle: Text(
                   [for (final d in (list[i].days.toList()..sort())) _dayNames[d - 1]].join(' '),
-                  style: const TextStyle(color: FluteColors.muted, fontSize: 12),
+                  style: _subtle,
                 ),
                 trailing: IconButton(
+                  tooltip: 'Remove schedule',
                   icon: const Icon(Icons.close, size: 18),
                   onPressed: () => flute.modes.setSchedules([...list]..removeAt(i)),
                 ),
               ),
-            TextButton(
-              style: TextButton.styleFrom(alignment: Alignment.centerLeft, padding: EdgeInsets.zero),
-              onPressed: () => _add(context, list),
-              child: const Text('Add schedule'),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.add, color: FluteColors.muted),
+              title: const Text('Add schedule'),
+              onTap: () => _add(context, list),
             ),
           ],
         );
@@ -496,7 +528,38 @@ class _Schedules extends StatelessWidget {
   }
 }
 
-/// Lighting follows the time of day. These chips preview any phase or weather on the spot.
+/// A label with a dropdown of choices. A null value means the automatic choice.
+class _PickRow<T> extends StatelessWidget {
+  const _PickRow({required this.label, required this.value, required this.items, required this.onChanged});
+  final String label;
+  final T? value;
+  final List<DropdownMenuItem<T?>> items;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 16))),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<T?>(
+              value: value,
+              items: items,
+              onChanged: onChanged,
+              dropdownColor: FluteColors.surfaceHigh,
+              icon: const Icon(Icons.expand_more, color: FluteColors.muted),
+              style: const TextStyle(color: FluteColors.text, fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Lighting follows the time of day. These choices preview any phase or weather on the spot.
 class _Appearance extends StatelessWidget {
   const _Appearance({required this.flute});
   final Flute flute;
@@ -511,43 +574,44 @@ class _Appearance extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (s.previewActive && until != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Preview on, ends at ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')}',
-                        style: const TextStyle(color: FluteColors.warn, fontSize: 13),
+            AnimatedSize(
+              duration: _motion(context, 240),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: s.previewActive && until != null
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Preview on, ends at ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(color: FluteColors.warn, fontSize: 13),
+                            ),
+                          ),
+                          TextButton(onPressed: s.endPreview, child: const Text('End preview')),
+                        ],
                       ),
-                    ),
-                    TextButton(onPressed: s.endPreview, child: const Text('End preview')),
-                  ],
-                ),
-              ),
-            const Text('Time of day', style: TextStyle(fontSize: 14)),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ChoiceChip(label: const Text('Auto'), selected: s.phasePreview == null, onSelected: (_) => s.previewPhase(null)),
-                for (final p in DayPhase.values)
-                  ChoiceChip(label: Text(p.label), selected: s.phasePreview == p, onSelected: (_) => s.previewPhase(p)),
-              ],
+                    )
+                  : const SizedBox.shrink(),
             ),
-            const SizedBox(height: 14),
-            const Text('Weather', style: TextStyle(fontSize: 14)),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ChoiceChip(label: const Text('Live'), selected: s.kindPreview == null, onSelected: (_) => s.previewKind(null)),
-                for (final k in WeatherKind.values)
-                  ChoiceChip(label: Text(k.label), selected: s.kindPreview == k, onSelected: (_) => s.previewKind(k)),
+            _PickRow<DayPhase>(
+              label: 'Time of day',
+              value: s.phasePreview,
+              items: [
+                const DropdownMenuItem<DayPhase?>(value: null, child: Text('Auto')),
+                for (final p in DayPhase.values) DropdownMenuItem<DayPhase?>(value: p, child: Text(p.label)),
               ],
+              onChanged: s.previewPhase,
+            ),
+            _PickRow<WeatherKind>(
+              label: 'Weather',
+              value: s.kindPreview,
+              items: [
+                const DropdownMenuItem<WeatherKind?>(value: null, child: Text('Live')),
+                for (final k in WeatherKind.values) DropdownMenuItem<WeatherKind?>(value: k, child: Text(k.label)),
+              ],
+              onChanged: s.previewKind,
             ),
           ],
         );
@@ -575,31 +639,41 @@ class _Pets extends StatelessWidget {
               title: const Text('Show characters on Home'),
               subtitle: const Text(
                 'Your character strolls, sleeps at night and heads indoors when it rains. Tap them, or knock on their house.',
-                style: TextStyle(color: FluteColors.muted, fontSize: 12),
+                style: _subtle,
               ),
               value: flute.pets.enabled,
               onChanged: flute.pets.setEnabled,
             ),
-            if (lib != null && flute.pets.enabled) ...[
-              const Text(
-                'Choose your character',
-                style: TextStyle(color: FluteColors.muted, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  for (final info in lib.infos)
-                    _PetTile(
-                      library: lib,
-                      info: info,
-                      selected: flute.pets.selected.contains(info.id),
-                      onTap: () => flute.pets.select(info.id),
+            AnimatedSize(
+              duration: _motion(context, 240),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: lib == null || !flute.pets.enabled
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Choose your character', style: _subtle),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              for (final info in lib.infos)
+                                _PetTile(
+                                  library: lib,
+                                  info: info,
+                                  selected: flute.pets.selected.contains(info.id),
+                                  onTap: () => flute.pets.select(info.id),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                ],
-              ),
-            ],
+            ),
           ],
         );
       },
@@ -616,33 +690,43 @@ class _PetTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Container(
-        width: 92,
-        padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
-        decoration: BoxDecoration(
-          color: selected ? FluteColors.accent.withValues(alpha: 0.12) : FluteColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: selected ? FluteColors.accent : FluteColors.line, width: selected ? 1.6 : 1),
-        ),
-        child: Column(
-          children: [
-            SizedBox(
-              width: 64,
-              height: 64,
-              child: FutureBuilder<PetSprites?>(
-                future: library.sprites(info.id),
-                builder: (context, snap) {
-                  final s = snap.data;
-                  return s == null ? const SizedBox.shrink() : CustomPaint(painter: _AvatarPainter(s));
-                },
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: info.name,
+      excludeSemantics: true,
+      child: PressScale(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: _motion(context, 220),
+          width: 92,
+          padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+          decoration: BoxDecoration(
+            color: selected ? FluteColors.accent.withValues(alpha: 0.12) : FluteColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: selected ? FluteColors.accent : FluteColors.line, width: selected ? 1.6 : 1),
+          ),
+          child: Column(
+            children: [
+              SizedBox(
+                width: 64,
+                height: 64,
+                child: FutureBuilder<PetSprites?>(
+                  future: library.sprites(info.id),
+                  builder: (context, snap) {
+                    final s = snap.data;
+                    return s == null ? const SizedBox.shrink() : CustomPaint(painter: _AvatarPainter(s));
+                  },
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(info.name, style: TextStyle(fontSize: 13, color: selected ? FluteColors.accent : FluteColors.text)),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                info.name,
+                style: TextStyle(fontSize: 13, color: selected ? FluteColors.accent : FluteColors.text),
+              ),
+            ],
+          ),
         ),
       ),
     );

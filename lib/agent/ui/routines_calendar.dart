@@ -309,11 +309,15 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
     final inMonth = day.month == _month.month;
     final isToday = day == today;
     final isSelected = day == _selected;
-    final dots = <Color>[];
+    // Runs and device events are solid dots; scheduled fires are hollow rings.
+    final dots = <CalendarEntry>[];
     for (final entry in entries) {
       if (dots.length == 3) break;
-      if (!dots.contains(entry.color)) dots.add(entry.color);
+      if (!dots.any((d) => d.color == entry.color && d.scheduled == entry.scheduled)) dots.add(entry);
     }
+    final labelColor = isToday
+        ? FluteColors.bg
+        : (inMonth ? FluteColors.text : FluteColors.muted.withValues(alpha: 0.5));
     return GestureDetector(
       key: ValueKey('day-$key'),
       behavior: HitTestBehavior.opaque,
@@ -322,12 +326,10 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
         height: 46,
         margin: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color: isSelected ? FluteColors.surfaceHigh : const Color(0x00000000),
+          color: isToday
+              ? FluteColors.accent
+              : (isSelected ? FluteColors.surfaceHigh : const Color(0x00000000)),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isToday ? FluteColors.accent : const Color(0x00000000),
-            width: isToday ? 1.2 : 0,
-          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -335,7 +337,7 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
             Text(
               '${day.day}',
               style: TextStyle(
-                color: inMonth ? (isToday ? FluteColors.accent : FluteColors.text) : FluteColors.muted.withValues(alpha: 0.5),
+                color: labelColor,
                 fontSize: 14,
                 fontWeight: isToday ? FontWeight.w600 : FontWeight.w400,
               ),
@@ -349,12 +351,16 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
                       key: ValueKey('dots-$key'),
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        for (final color in dots)
+                        for (final entry in dots)
                           Container(
                             width: 5,
                             height: 5,
                             margin: const EdgeInsets.symmetric(horizontal: 1),
-                            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                            decoration: BoxDecoration(
+                              color: entry.scheduled ? null : entry.color,
+                              border: entry.scheduled ? Border.all(color: entry.color) : null,
+                              shape: BoxShape.circle,
+                            ),
                           ),
                       ],
                     ),

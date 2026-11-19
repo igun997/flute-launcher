@@ -11,6 +11,9 @@ const _languages = <String?, String>{
   'id-ID': 'Bahasa Indonesia',
 };
 
+/// Display name for a voice language code. Null or unknown codes read as the device default.
+String voiceLanguageLabel(String? code) => _languages[code] ?? 'Device default';
+
 class VoiceSettingsSection extends StatelessWidget {
   const VoiceSettingsSection({super.key, required this.voice});
 

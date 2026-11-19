@@ -5,6 +5,7 @@ import '../email/email_models.dart';
 import '../email/email_widgets.dart';
 import '../native/flute_native.dart';
 import '../widgets/sky_ink.dart';
+import 'press_scale.dart';
 
 enum InboxFilter {
   all('All'),
@@ -96,6 +97,13 @@ String ago(DateTime t, {DateTime? now}) {
   return '${d.inDays}d';
 }
 
+/// Empty copy for each filter: nothing at all, no chats, or no mail.
+String _emptyText(InboxFilter filter) => switch (filter) {
+      InboxFilter.all => 'Nothing new',
+      InboxFilter.chat => 'No messages yet',
+      InboxFilter.mail => 'No mail yet',
+    };
+
 /// Everything that arrived, in one place: WhatsApp and SMS from notifications and every
 /// connected mailbox.
 class InboxPage extends StatefulWidget {
@@ -139,6 +147,7 @@ class _InboxPageState extends State<InboxPage> {
   @override
   Widget build(BuildContext context) {
     final flute = widget.flute;
+    final reduced = MediaQuery.disableAnimationsOf(context);
     return SafeArea(
       child: DefaultTextStyle.merge(
         style: TextStyle(color: SkyInk.of(context).ink, shadows: [Shadow(color: SkyInk.of(context).shadow, blurRadius: 8)]),
@@ -152,6 +161,7 @@ class _InboxPageState extends State<InboxPage> {
               accountLabels: accounts,
               filter: _filter,
             );
+            final warnAccess = !flute.notificationAccess.value && _filter != InboxFilter.mail;
             return Padding(
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
               child: Column(
@@ -179,26 +189,42 @@ class _InboxPageState extends State<InboxPage> {
                         ChoiceChip(label: Text(f.label), selected: _filter == f, onSelected: (_) => setState(() => _filter = f)),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  if (!flute.notificationAccess.value && _filter != InboxFilter.mail)
-                    InkWell(
-                      onTap: FluteNative.openNotificationAccessSettings,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text('Allow notification access to see WhatsApp and SMS here.', style: TextStyle(color: SkyInk.of(context).warn, fontSize: 14)),
+                  AnimatedSize(
+                    duration: reduced ? Duration.zero : const Duration(milliseconds: 240),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: warnAccess
+                        ? InkWell(
+                            onTap: FluteNative.openNotificationAccessSettings,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+                              child: Text(
+                                'Allow notification access to see WhatsApp and SMS here.',
+                                style: TextStyle(color: SkyInk.of(context).warn, fontSize: 14),
+                              ),
+                            ),
+                          )
+                        : const SizedBox(width: double.infinity),
+                  ),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: reduced ? Duration.zero : const Duration(milliseconds: 220),
+                      child: KeyedSubtree(
+                        key: ValueKey('${_filter.name}-${items.isEmpty}'),
+                        child: items.isEmpty
+                            ? Center(
+                                child: Text(_emptyText(_filter), style: TextStyle(color: SkyInk.of(context).inkSoft, fontSize: 15)),
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _refresh,
+                                child: ListView.builder(
+                                  padding: const EdgeInsets.only(bottom: 24),
+                                  itemCount: items.length,
+                                  itemBuilder: (context, i) => _Row(item: items[i], onTap: () => _open(items[i])),
+                                ),
+                              ),
                       ),
                     ),
-                  Expanded(
-                    child: items.isEmpty
-                        ? Center(child: Text('Nothing new', style: TextStyle(color: SkyInk.of(context).inkSoft)))
-                        : RefreshIndicator(
-                            onRefresh: _refresh,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.only(bottom: 24),
-                              itemCount: items.length,
-                              itemBuilder: (context, i) => _Row(item: items[i], onTap: () => _open(items[i])),
-                            ),
-                          ),
                   ),
                 ],
               ),
@@ -217,39 +243,53 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final ink = SkyInk.of(context);
+    return Semantics(
+      button: true,
+      excludeSemantics: true,
+      label: '${item.source}, ${item.title}, ${item.subtitle}, ${ago(item.time)}',
+      child: PressScale(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 16, fontWeight: item.unread ? FontWeight.w600 : FontWeight.w400),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: ink.inkSoft, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 16, fontWeight: item.unread ? FontWeight.w600 : FontWeight.w400),
-                  ),
+                  Text(ago(item.time), style: TextStyle(color: ink.inkSoft, fontSize: 13)),
                   const SizedBox(height: 2),
-                  Text(item.subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: SkyInk.of(context).inkSoft, fontSize: 14)),
+                  Text(
+                    item.source,
+                    style: TextStyle(color: item.isMail ? ink.warn : ink.accent, fontSize: 12, letterSpacing: 0.4),
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(ago(item.time), style: TextStyle(color: SkyInk.of(context).inkSoft, fontSize: 12)),
-                const SizedBox(height: 2),
-                Text(item.source, style: TextStyle(color: item.isMail ? SkyInk.of(context).warn : SkyInk.of(context).accent, fontSize: 11, letterSpacing: 0.4)),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

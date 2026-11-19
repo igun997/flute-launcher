@@ -8,7 +8,7 @@ import '../tools/tool_support.dart';
 import 'settings_widgets.dart';
 
 /// Sandbox provider choice, API keys, the local Python runtime, and a self-test.
-/// Saved keys are never shown again.
+/// Only the provider being viewed shows its form. Saved keys are never shown again.
 class SandboxSettingsSection extends StatefulWidget {
   const SandboxSettingsSection({super.key, required this.manager});
   final SandboxManager manager;
@@ -16,6 +16,11 @@ class SandboxSettingsSection extends StatefulWidget {
   @override
   State<SandboxSettingsSection> createState() => _SandboxSettingsSectionState();
 }
+
+/// Owner keys for the status lines: a provider id, or one of these.
+const _ownerLocal = 'local';
+const _ownerKeepWarm = 'keepWarm';
+const _ownerTest = 'test';
 
 class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
   final _keys = <String, TextEditingController>{};
@@ -26,17 +31,38 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
   String? _error;
   String? _result;
   bool _localInstalled = false;
+  bool _howOpen = false;
+
+  /// The block that started the latest action. Null means the top-level provider choice.
+  String? _owner;
+
+  /// The provider whose form is shown. Independent of the preferred provider.
+  late String _viewing;
 
   @override
   void initState() {
     super.initState();
-    for (final p in widget.manager.providers.where((p) => p.needsKey)) {
+    final m = widget.manager;
+    for (final p in m.providers.where((p) => p.needsKey)) {
       _keys[p.id] = TextEditingController();
-      _urls[p.id] = TextEditingController(text: widget.manager.apiUrl(p.id) ?? '');
-      _existing[p.id] = TextEditingController(text: widget.manager.existingSandbox(p.id) ?? '');
+      _urls[p.id] = TextEditingController(text: m.apiUrl(p.id) ?? '');
+      _existing[p.id] = TextEditingController(text: m.existingSandbox(p.id) ?? '');
     }
-    _keepWarm.text = '${widget.manager.keepWarmMinutes}';
+    _keepWarm.text = '${m.keepWarmMinutes}';
+    _viewing = _initialView();
     _refreshLocal();
+  }
+
+  /// The preferred provider if it exists, else the first usable one, else Local.
+  String _initialView() {
+    final m = widget.manager;
+    final providers = m.providers;
+    final preferred = m.preferredProviderId;
+    if (preferred != null && providers.any((p) => p.id == preferred)) return preferred;
+    for (final p in providers) {
+      if (p.usable) return p.id;
+    }
+    return 'local';
   }
 
   @override
@@ -47,9 +73,10 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
     super.dispose();
   }
 
-  Future<void> _run(String label, Future<void> Function() action) async {
+  Future<void> _run(String label, Future<void> Function() action, {String? owner}) async {
     setState(() {
       _busy = label;
+      _owner = owner;
       _error = null;
     });
     try {
@@ -67,6 +94,13 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
     _ => readableError(e),
   };
 
+  /// Shows a provider's form. Only a usable provider becomes the preferred one.
+  Future<void> _view(SandboxManager m, String id) async {
+    final p = m.providers.firstWhere((p) => p.id == id);
+    setState(() => _viewing = id);
+    if (p.usable) await _run('Saving...', () => m.setPreferred(id));
+  }
+
   Future<void> _refreshLocal() async {
     final installed = await widget.manager.localInstalled();
     if (mounted) setState(() => _localInstalled = installed);
@@ -76,25 +110,19 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
     final url = _urls[p.id]!.text.trim();
     await widget.manager.saveKey(p.id, _keys[p.id]!.text, apiUrl: url.isEmpty ? null : url);
     _keys[p.id]!.clear();
-  });
+  }, owner: p.id);
 
   Future<void> _saveExisting(String id) =>
-      _run('Saving...', () => widget.manager.setExistingSandbox(id, _existing[id]!.text));
+      _run('Saving...', () => widget.manager.setExistingSandbox(id, _existing[id]!.text), owner: id);
 
   Future<void> _remove(SandboxProviderStatus p) async {
-    final sure = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Remove the ${p.label} key?'),
-        content: Text('Sandbox runs on ${p.label} stop working until a new key is saved.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
-        ],
-      ),
+    final sure = await confirmRemove(
+      context,
+      title: 'Remove the ${p.label} key?',
+      message: 'Sandbox runs on ${p.label} stop working until a new key is saved.',
     );
-    if (sure != true) return;
-    await _run('Removing...', () => widget.manager.removeKey(p.id));
+    if (!sure) return;
+    await _run('Removing...', () => widget.manager.removeKey(p.id), owner: p.id);
   }
 
   Future<void> _downloadLocal() => _run('Downloading...', () async {
@@ -104,67 +132,122 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
       },
     );
     await _refreshLocal();
-  });
+  }, owner: _ownerLocal);
 
-  Future<void> _deleteLocal() => _run('Deleting...', () async {
-    await widget.manager.deleteLocal();
-    await _refreshLocal();
-  });
+  Future<void> _deleteLocal() async {
+    final sure = await confirmRemove(
+      context,
+      title: 'Delete the local Python runtime?',
+      message: 'It downloads again the next time the agent needs Python.',
+      action: 'Delete',
+    );
+    if (!sure) return;
+    await _run('Deleting...', () async {
+      await widget.manager.deleteLocal();
+      await _refreshLocal();
+    }, owner: _ownerLocal);
+  }
 
   Future<void> _saveKeepWarm() => _run('Saving...', () async {
     final minutes = int.tryParse(_keepWarm.text.trim());
     if (minutes == null) throw const FormatException('Enter whole minutes, 0 to 60.');
     await widget.manager.setKeepWarmMinutes(minutes);
     _keepWarm.text = '${widget.manager.keepWarmMinutes}';
-  });
+  }, owner: _ownerKeepWarm);
 
   Future<void> _test() => _run('Running print(1+1)...', () async {
     final took = await widget.manager.selfTest();
     if (mounted) setState(() => _result = 'Works. Printed 2 in ${took.inMilliseconds} ms.');
-  });
+  }, owner: _ownerTest);
 
   @override
   Widget build(BuildContext context) {
     final m = widget.manager;
+    final motionDuration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 220);
     return ListenableBuilder(
       listenable: m,
       builder: (context, _) {
         final idle = _busy == null;
         final stopError = m.stopError;
+        final viewed = m.providers.firstWhere((p) => p.id == _viewing, orElse: () => m.providers.last);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SettingsLabel('Sandbox'),
             const Padding(
               padding: EdgeInsets.only(bottom: 8),
               child: Text(
-                'Lets the agent run Python and shell commands in an isolated machine. Keys stay on this device.',
+                'Runs Python in an isolated machine and shuts it down when the answer is done.',
                 style: settingsMuted,
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'A sandbox starts when the agent first needs it and stops when its run ends. Sandboxes this app creates are deleted. One you name is paused or stopped. It also stops after 90 seconds idle and when the app goes to the background.',
-                style: settingsMuted,
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => setState(() => _howOpen = !_howOpen),
+              child: Semantics(
+                button: true,
+                expanded: _howOpen,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('How it works', style: TextStyle(color: FluteColors.softText, fontSize: 13)),
+                      Icon(
+                        _howOpen ? Icons.expand_less : Icons.expand_more,
+                        size: 18,
+                        color: FluteColors.muted,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            if (_busy != null) ProgressLine(_busy!),
-            if (_error != null) ErrorLine(_error!),
+            AnimatedSize(
+              duration: motionDuration,
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topLeft,
+              child: _howOpen
+                  ? const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'A sandbox starts when the agent first needs it and stops when its run ends. Sandboxes this app creates are deleted. One you name is paused or stopped. It also stops after 90 seconds idle and when the app goes to the background. Keys stay on this device. Local Python has no shell and no file access.',
+                        style: settingsMuted,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            if (_owner == null && _busy != null) ProgressLine(_busy!),
+            if (_owner == null && _error != null) ErrorLine(_error!),
             if (stopError != null) ErrorLine('Could not stop the last sandbox. Retrying. $stopError'),
             SegmentedButton<String>(
-              emptySelectionAllowed: true,
               segments: [
-                for (final p in m.providers)
-                  ButtonSegment(value: p.id, label: Text(p.label), enabled: p.usable),
+                for (final p in m.providers) ButtonSegment(value: p.id, label: Text(p.label)),
               ],
-              selected: {?m.preferredProviderId},
-              onSelectionChanged: idle
-                  ? (s) => _run('Saving...', () => m.setPreferred(s.isEmpty ? null : s.first))
-                  : null,
+              selected: {_viewing},
+              onSelectionChanged: idle ? (s) => _view(m, s.first) : null,
             ),
-            for (final p in m.providers)
-              if (p.needsKey) _remoteBlock(p, idle) else _localBlock(idle),
+            if (!viewed.usable)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('Add a key to use ${viewed.label}.', style: settingsMuted),
+              ),
+            AnimatedSwitcher(
+              duration: motionDuration,
+              layoutBuilder: (current, previous) => Stack(
+                alignment: Alignment.topLeft,
+                children: [...previous, ?current],
+              ),
+              transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+              child: KeyedSubtree(
+                key: ValueKey('form-${viewed.id}'),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: viewed.needsKey ? _remoteBlock(viewed, idle) : _localBlock(idle),
+                ),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.only(top: 20),
               child: Column(
@@ -192,6 +275,8 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
                       TextButton(onPressed: idle ? _saveKeepWarm : null, child: const Text('Save')),
                     ],
                   ),
+                  if (_owner == _ownerKeepWarm && _busy != null) ProgressLine(_busy!),
+                  if (_owner == _ownerKeepWarm && _error != null) ErrorLine(_error!),
                 ],
               ),
             ),
@@ -209,14 +294,24 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
                     ),
                   ),
                   OutlinedButton(onPressed: idle ? _test : null, child: const Text('Run test')),
-                  if (_result != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        _result!,
-                        style: const TextStyle(color: FluteColors.softText, fontSize: 13),
-                      ),
-                    ),
+                  if (_owner == _ownerTest && _busy != null) ProgressLine(_busy!),
+                  if (_owner == _ownerTest && _error != null) ErrorLine(_error!),
+                  AnimatedSwitcher(
+                    duration: motionDuration,
+                    child: _result == null
+                        ? const SizedBox.shrink(key: ValueKey('no-result'))
+                        : Padding(
+                            key: ValueKey(_result),
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                _result!,
+                                style: const TextStyle(color: FluteColors.softText, fontSize: 13),
+                              ),
+                            ),
+                          ),
+                  ),
                 ],
               ),
             ),
@@ -237,7 +332,7 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
             children: [
               Text(p.label, style: const TextStyle(color: FluteColors.text, fontSize: 15)),
               const SizedBox(width: 8),
-              if (saved) const SettingsTag('Saved'),
+              if (saved) const CalmTag('Saved'),
             ],
           ),
           const SizedBox(height: 8),
@@ -247,7 +342,8 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
             autocorrect: false,
             enableSuggestions: false,
             decoration: InputDecoration(
-              hintText: saved ? 'Paste a new key to replace it' : 'Paste your ${p.label} API key',
+              labelText: '${p.label} API key',
+              hintText: saved ? 'Paste a new key to replace it' : 'Paste it here',
               isDense: true,
             ),
           ),
@@ -256,7 +352,11 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
             controller: _urls[p.id],
             keyboardType: TextInputType.url,
             autocorrect: false,
-            decoration: const InputDecoration(hintText: 'API address (optional, https only)', isDense: true),
+            decoration: const InputDecoration(
+              labelText: 'API address',
+              hintText: 'Optional, https only',
+              isDense: true,
+            ),
           ),
           Row(
             children: [
@@ -270,18 +370,21 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
               ],
             ],
           ),
+          if (_owner == p.id && _busy != null) ProgressLine(_busy!),
+          if (_owner == p.id && _error != null) ErrorLine(_error!),
           const SizedBox(height: 8),
-          const Text(
-            'Existing sandbox ID (optional). The agent resumes it and stops or pauses it after each run instead of deleting it.',
-            style: settingsMuted,
-          ),
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: _existing[p.id],
                   autocorrect: false,
-                  decoration: const InputDecoration(hintText: 'Sandbox ID', isDense: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Existing sandbox ID',
+                    helperText: 'Optional. The agent resumes it and stops or pauses it after each run instead of deleting it.',
+                    helperMaxLines: 2,
+                    isDense: true,
+                  ),
                 ),
               ),
               TextButton(onPressed: idle ? () => _saveExisting(p.id) : null, child: const Text('Save')),
@@ -303,12 +406,12 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
             children: [
               const Text('Local Python', style: TextStyle(color: FluteColors.text, fontSize: 15)),
               const SizedBox(width: 8),
-              if (_localInstalled) const SettingsTag('Installed'),
+              if (_localInstalled) const CalmTag('Installed'),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            'Runs Python 3.12 on this phone with no account. The runtime is about $sizeMb MB, downloaded on first use and kept in app storage. Python only: no shell and no file access.',
+            'Python 3.12 on this phone, no account needed. About $sizeMb MB, downloaded once.',
             style: settingsMuted,
           ),
           const SizedBox(height: 8),
@@ -322,6 +425,8 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
               onPressed: idle ? _downloadLocal : null,
               child: Text('Download runtime ($sizeMb MB)'),
             ),
+          if (_owner == _ownerLocal && _busy != null) ProgressLine(_busy!),
+          if (_owner == _ownerLocal && _error != null) ErrorLine(_error!),
         ],
       ),
     );

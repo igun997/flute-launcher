@@ -105,7 +105,7 @@ class _RoutinesPageState extends State<RoutinesPage> {
 
   void _openEditor([Routine? routine]) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => RoutineEditorPage(flute: widget.flute, routine: routine)),
+      settingsRoute<void>(context, (_) => RoutineEditorPage(flute: widget.flute, routine: routine)),
     );
   }
 
@@ -298,15 +298,16 @@ class _RoutinesPageState extends State<RoutinesPage> {
     final history = store.history(routine.id);
     final latest = history.isEmpty ? null : history.first;
     final running = _running.contains(routine.id);
+    final paused = store.isPaused(routine.id);
     final String status;
     if (!routine.enabled) {
-      status = store.isPaused(routine.id) ? 'Paused after two failed runs' : 'Off';
+      status = paused ? 'Paused after two failed runs' : 'Off';
     } else {
       status = next == null ? 'Not scheduled' : 'Next ${formatRoutineTime(next, now)}';
     }
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(14, 10, 8, 6),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
       decoration: BoxDecoration(
         color: FluteColors.surface,
         borderRadius: BorderRadius.circular(16),
@@ -317,63 +318,52 @@ class _RoutinesPageState extends State<RoutinesPage> {
         children: [
           Row(
             children: [
-              Container(
-                width: 8,
-                height: 8,
-                margin: const EdgeInsets.only(right: 10),
-                decoration: BoxDecoration(color: routineColor(routine.id), shape: BoxShape.circle),
-              ),
               Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
                   onTap: () => _openEditor(routine),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(routine.name, style: const TextStyle(color: FluteColors.text, fontSize: 15)),
-                      const SizedBox(height: 2),
-                      Text(routine.describeTrigger(), style: settingsMuted),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(routine.name, style: const TextStyle(color: FluteColors.text, fontSize: 16)),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${routine.describeTrigger()} · $status',
+                          style: TextStyle(color: paused ? FluteColors.warn : FluteColors.muted, fontSize: 13),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              Switch(value: routine.enabled, onChanged: (on) => _setEnabled(routine, on)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 18),
-            child: Text(
-              status,
-              style: TextStyle(
-                color: store.isPaused(routine.id) ? FluteColors.warn : FluteColors.muted,
-                fontSize: 12,
+              Semantics(
+                label: 'Turn on ${routine.name}',
+                child: Switch(value: routine.enabled, onChanged: (on) => _setEnabled(routine, on)),
               ),
-            ),
+            ],
           ),
           if (latest != null)
             Padding(
-              padding: const EdgeInsets.only(left: 18, top: 6, right: 8),
-              child: GestureDetector(
+              padding: const EdgeInsets.only(top: 6, right: 8),
+              child: InkWell(
                 key: ValueKey('last-${routine.id}'),
-                behavior: HitTestBehavior.opaque,
+                borderRadius: BorderRadius.circular(8),
                 onTap: () => showRoutineRunSheet(context, latest, routine),
                 child: Text(
                   '${latest.ok ? '' : (latest.skipped ? 'Skipped: ' : 'Failed: ')}${_oneLine(latest.summary, 160)}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: FluteColors.softText, fontSize: 13),
                 ),
               ),
             ),
           Align(
             alignment: Alignment.centerRight,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextButton(
-                  onPressed: running ? null : () => _runNow(routine),
-                  child: Text(running ? 'Running…' : 'Run now'),
-                ),
-              ],
+            child: TextButton(
+              onPressed: running ? null : () => _runNow(routine),
+              child: Text(running ? 'Running…' : 'Run now'),
             ),
           ),
         ],

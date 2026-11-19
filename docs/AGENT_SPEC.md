@@ -653,3 +653,29 @@ UI: a Routines page (list with next run time, enable switch, run now, last resul
 interval, allow-writes switch with the rule explained, speak switch), empty state with 3 example routines ("Morning briefing:
 today's calendar and weather", "Evening wind-down: switch to Sleep mode at 22:30 and say goodnight" (needs allowWrites), "Weekly: summarise
 unread mail"). Also a "Routines" row in the agent settings section list (the owner wires `RoutinesSection`).
+
+## Slice I: images (Main)
+
+`lib/agent/tools/image_tools.dart`, `lib/agent/image/*`, `lib/agent/ui/image_canvas.dart`, `shaders/imagine.frag`.
+
+- **Tool** `image_generate(prompt, shape=square|portrait|landscape)`, risk `write` (it spends credits, so it asks), `makesImages` true.
+  It calls `POST {baseUrl}/images/generations` with `{model, prompt, n:1, size}` on an OpenAI-compatible provider and reads
+  `data[0].b64_json` (or an https `url`). The reply is parsed off the UI isolate. The file goes to
+  `<app support>/images/img_<ms>.<png|jpg|webp>` (extension from the bytes, newest 60 kept). The model only gets a short text; the
+  path travels in `ToolResult.images` and `ToolItem.images`.
+- **Detection** (`ImageModels.candidates`): a gateway rarely says which models draw. A model counts when its list entry says so
+  (`capabilities.imageOutput`, `output_modalities` has `image`), or its id contains a known name (`gpt-image`, `dall-e`, `imagen`,
+  `flux`, `sdxl`, `stable-diffusion`, `nano-banana`, `flash-image`, `-image-`). On a gateway that lists `cx/` or `gemini/` models,
+  `cx/gpt-image-2` and `gemini/gemini-3.1-flash-image-preview` / `gemini/gemini-2.5-flash-image` are added (they work but are not
+  listed; probed on the real gateway). `cx/gpt-image-1` is refused by Codex with a ChatGPT account. The user's choice goes first; up
+  to three models are tried, a refusal moves to the next, a network error stops.
+- **Animation**: while the tool runs, the card shows a 1:1 canvas drawn by `shaders/imagine.frag` (domain-warped colour fields and a
+  light sweep, GPU; `uTime` is seconds modulo 60 so the loop has no seam) with an elapsed counter; the picture then fades and settles in.
+  Reduced motion draws one still frame.
+
+## Pitfall: pin jni
+
+A fresh `pub get` on a new build box resolved `jni 1.2.0` / `jni_flutter 1.1.0` (used by `path_provider_android` and
+`shared_preferences_android`), and the app died at start with `ClassNotFoundException: Landroid/content/Context;`. `pubspec.yaml`
+pins `jni: 1.1.2` and `jni_flutter: 1.0.4+1` in `dependency_overrides`. `pubspec.lock` is not part of the resolution on the build box.
+

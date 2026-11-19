@@ -89,13 +89,13 @@ class _McpServersSectionState extends State<McpServersSection> {
 
   Future<void> _addServer() async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => McpAddPage(flute: widget.flute)),
+      settingsRoute<void>(context, (_) => McpAddPage(flute: widget.flute)),
     );
   }
 
   void _open(McpServerConfig server) {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => McpServerPage(flute: widget.flute, serverId: server.id)),
+      settingsRoute<void>(context, (_) => McpServerPage(flute: widget.flute, serverId: server.id)),
     );
   }
 
@@ -182,18 +182,12 @@ class _McpServerPageState extends State<McpServerPage> {
   }
 
   Future<void> _delete(McpServerConfig server) async {
-    final sure = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Remove ${server.name}?'),
-        content: const Text('Its token is deleted from this phone and the agent loses its tools.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
-        ],
-      ),
+    final sure = await confirmRemove(
+      context,
+      title: 'Remove ${server.name}?',
+      message: 'Its token is deleted from this phone and the agent loses its tools.',
     );
-    if (sure != true) return;
+    if (!sure) return;
     await _run(() => _mcp.remove(server.id));
     if (mounted && _mcp.servers.every((s) => s.id != server.id)) Navigator.of(context).pop();
   }
@@ -360,7 +354,7 @@ class McpAddPage extends StatelessWidget {
 
   Future<void> _open(BuildContext context, McpPreset? preset) async {
     final added = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => _McpServerForm(flute: flute, preset: preset)),
+      settingsRoute<bool>(context, (_) => _McpServerForm(flute: flute, preset: preset)),
     );
     if (added == true && context.mounted) Navigator.of(context).pop();
   }

@@ -33,7 +33,6 @@ class ImageSettingsSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SettingsLabel('Image generation'),
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(

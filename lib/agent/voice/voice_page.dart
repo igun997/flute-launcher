@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../app/theme.dart';
@@ -18,6 +19,58 @@ class VoicePage extends StatefulWidget {
   @override
   State<VoicePage> createState() => _VoicePageState();
 }
+
+/// Turns a markdown reply into plain text for the on-screen caption. Code fences, table rules and
+/// markup are dropped; the words stay. Lines are joined with spaces.
+String plainReplyText(String markdown) {
+  final lines = <String>[];
+  var inFence = false;
+  for (final raw in markdown.split('\n')) {
+    final line = raw.trim();
+    if (line.startsWith('```') || line.startsWith('~~~')) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (_tableRule.hasMatch(line)) continue;
+    lines.add(
+      line
+          .replaceFirst(_heading, '')
+          .replaceFirst(_quote, '')
+          .replaceFirst(_listMarker, '')
+          .replaceAll('|', ' '),
+    );
+  }
+  return lines
+      .join(' ')
+      .replaceAllMapped(_image, (m) => m[1] ?? '')
+      .replaceAllMapped(_link, (m) => m[1] ?? '')
+      .replaceAllMapped(_code, (m) => m[1] ?? '')
+      .replaceAllMapped(_boldStar, (m) => m[1] ?? '')
+      .replaceAllMapped(_boldUnderscore, (m) => m[1] ?? '')
+      .replaceAllMapped(_italicStar, (m) => m[1] ?? '')
+      .replaceAllMapped(_italicUnderscore, (m) => m[1] ?? '')
+      .replaceAll(_stray, '')
+      .replaceAll(_spaces, ' ')
+      .trim();
+}
+
+final _tableRule = RegExp(r'^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$');
+final _heading = RegExp(r'^#{1,6}\s+');
+final _quote = RegExp(r'^>\s?');
+final _listMarker = RegExp(r'^([-*+]|\d+\.)\s+');
+final _image = RegExp(r'!\[([^\]]*)\]\([^)]*\)');
+final _link = RegExp(r'\[([^\]]+)\]\([^)]*\)');
+final _code = RegExp(r'`([^`]*)`');
+final _boldStar = RegExp(r'\*\*(.+?)\*\*');
+final _boldUnderscore = RegExp(r'__(.+?)__');
+final _italicStar = RegExp(r'\*(.+?)\*');
+final _italicUnderscore = RegExp(r'(?<![A-Za-z0-9])_(.+?)_(?![A-Za-z0-9])');
+final _stray = RegExp(r'[*`]');
+final _spaces = RegExp(r'\s+');
+
+Duration _dur(BuildContext context, int ms) =>
+    MediaQuery.disableAnimationsOf(context) ? Duration.zero : Duration(milliseconds: ms);
 
 class _VoicePageState extends State<VoicePage> {
   /// Ids of rows that existed before the current turn. Only a newer assistant row is read aloud.
@@ -84,11 +137,11 @@ class _VoicePageState extends State<VoicePage> {
     return null;
   }
 
-  /// The newest assistant text, shown on screen whether or not it is fresh.
+  /// The newest assistant reply as plain text, shown on screen whether or not it is fresh.
   String? _lastReplyText() {
     for (final item in _agent.items.reversed) {
       if (item is AssistantItem) {
-        final text = item.text.trim();
+        final text = plainReplyText(item.text);
         return text.isEmpty ? null : text;
       }
     }
@@ -109,6 +162,7 @@ class _VoicePageState extends State<VoicePage> {
   }
 
   void _onOrbTap() {
+    HapticFeedback.lightImpact();
     if (_voice.listening) {
       unawaited(_voice.finishListen());
       return;
@@ -126,9 +180,9 @@ class _VoicePageState extends State<VoicePage> {
   String _status() {
     return switch (_voice.state) {
       VoiceState.idle => _voice.handsFree ? 'Hands-free is on. Speak anytime.' : 'Tap the orb to talk.',
-      VoiceState.listening => 'Listening…',
-      VoiceState.thinking => 'Thinking…',
-      VoiceState.speaking => 'Speaking. Tap to interrupt.',
+      VoiceState.listening => 'Listening… tap to send',
+      VoiceState.thinking => 'Thinking… tap to cancel',
+      VoiceState.speaking => 'Speaking… tap to interrupt',
     };
   }
 
@@ -158,25 +212,24 @@ class _VoicePageState extends State<VoicePage> {
       body: SafeArea(
         child: ListenableBuilder(
           listenable: Listenable.merge([_agent, _voice]),
-          builder: (context, _) => _body(),
+          builder: (context, _) => _body(context),
         ),
       ),
     );
   }
 
-  Widget _body() {
+  Widget _body(BuildContext context) {
+    final status = _status();
     final reply = _lastReplyText();
     final error = _errorText();
     final partial = _voice.partial;
+    final listening = _voice.state == VoiceState.listening;
+    final motion = _dur(context, 260);
     return Column(
       children: [
         Expanded(
           child: Center(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _onOrbTap,
-              child: VoiceOrb(voice: _voice),
-            ),
+            child: VoiceOrb(voice: _voice, onTap: _onOrbTap, label: status),
           ),
         ),
         Padding(
@@ -184,40 +237,70 @@ class _VoicePageState extends State<VoicePage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _status(),
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: FluteColors.muted, fontSize: 14),
+              AnimatedSwitcher(
+                duration: _dur(context, 220),
+                child: Text(
+                  status,
+                  key: ValueKey(status),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: FluteColors.muted, fontSize: 14),
+                ),
               ),
-              if (partial.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    partial,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: FluteColors.text, fontSize: 18),
-                  ),
-                ),
-              if (reply != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    reply,
-                    maxLines: 6,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: FluteColors.softText, fontSize: 15),
-                  ),
-                ),
-              if (error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    error,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: FluteColors.warn, fontSize: 14),
-                  ),
-                ),
+              AnimatedSize(
+                duration: motion,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: partial.isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          partial,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: FluteColors.text, fontSize: 18),
+                        ),
+                      ),
+              ),
+              AnimatedSize(
+                duration: motion,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: reply == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: AnimatedOpacity(
+                          opacity: listening ? 0 : 1,
+                          duration: _dur(context, 220),
+                          child: AnimatedSwitcher(
+                            duration: _dur(context, 220),
+                            child: Text(
+                              reply,
+                              key: ValueKey(reply),
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: FluteColors.softText, fontSize: 15),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+              AnimatedSize(
+                duration: motion,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: error == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          error,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: FluteColors.warn, fontSize: 14),
+                        ),
+                      ),
+              ),
             ],
           ),
         ),

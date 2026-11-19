@@ -83,6 +83,25 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
     }
   }
 
+  /// Dims a page as it moves away from the centre, so the swipe reads as depth. Taps pass through.
+  Widget _dimmedWhenAway(int index, Widget page) {
+    return AnimatedBuilder(
+      animation: _pages,
+      child: page,
+      builder: (context, child) {
+        final current = _pages.hasClients ? (_pages.page ?? _homePage.toDouble()) : _homePage.toDouble();
+        final away = (current - index).abs().clamp(0.0, 1.0);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            child!,
+            IgnorePointer(child: ColoredBox(color: FluteColors.bg.withValues(alpha: away * 0.4))),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -97,12 +116,21 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
             controller: _pages,
             physics: const ClampingScrollPhysics(),
             children: [
-              _Backdrop(
-                flute: widget.flute,
-                child: AgentPage(flute: widget.flute, onClose: _goHome),
+              _dimmedWhenAway(
+                0,
+                _Backdrop(
+                  flute: widget.flute,
+                  child: AgentPage(flute: widget.flute, onClose: _goHome),
+                ),
               ),
-              HomePage(flute: widget.flute, onOpenInbox: _openInbox, visible: _homeVisible),
-              _Backdrop(flute: widget.flute, child: InboxPage(flute: widget.flute)),
+              _dimmedWhenAway(
+                _homePage,
+                HomePage(flute: widget.flute, onOpenInbox: _openInbox, visible: _homeVisible),
+              ),
+              _dimmedWhenAway(
+                _homePage + 1,
+                _Backdrop(flute: widget.flute, child: InboxPage(flute: widget.flute)),
+              ),
             ],
           ),
         ),

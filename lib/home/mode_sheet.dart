@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../app/flute.dart';
 import '../app/theme.dart';
 import '../core/models.dart';
+import 'press_scale.dart';
 
 Future<void> showModeSheet(BuildContext context, Flute flute) {
   return showModalBottomSheet<void>(
@@ -34,6 +35,7 @@ class _ModeSheetState extends State<_ModeSheet> {
   @override
   Widget build(BuildContext context) {
     final modes = widget.flute.modes;
+    final reduced = MediaQuery.disableAnimationsOf(context);
     return SafeArea(
       child: ListenableBuilder(
         listenable: modes,
@@ -47,19 +49,29 @@ class _ModeSheetState extends State<_ModeSheet> {
               children: [
                 const Text('Mode', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w300)),
                 const SizedBox(height: 14),
-                if (active.id == 'sleep') ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () async {
-                        await modes.wakeUp();
-                        if (context.mounted) Navigator.of(context).pop();
-                      },
-                      child: const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('Wake up')),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                ],
+                AnimatedSize(
+                  duration: reduced ? Duration.zero : const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: active.id == 'sleep'
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: () async {
+                                  await modes.wakeUp();
+                                  if (context.mounted) Navigator.of(context).pop();
+                                },
+                                child: const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('Wake up')),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                        )
+                      : const SizedBox(width: double.infinity),
+                ),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -91,7 +103,7 @@ class _ModeSheetState extends State<_ModeSheet> {
                   const SizedBox(height: 8),
                   const Text(
                     'Scheduled modes switch on automatically. Edit them in settings (long-press home).',
-                    style: TextStyle(color: FluteColors.muted, fontSize: 12),
+                    style: TextStyle(color: FluteColors.muted, fontSize: 13),
                   ),
                 ],
               ],
@@ -111,25 +123,34 @@ class _ModeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: active ? FluteColors.surfaceHigh : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: active ? FluteColors.accent.withValues(alpha: 0.7) : FluteColors.line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(mode.name, style: TextStyle(fontSize: 18, color: active ? FluteColors.accent : FluteColors.text)),
-            const SizedBox(height: 2),
-            Text(mode.tagline, style: const TextStyle(color: FluteColors.muted, fontSize: 13)),
-          ],
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    return Semantics(
+      button: true,
+      selected: active,
+      label: '${mode.name}. ${mode.tagline}',
+      excludeSemantics: true,
+      child: PressScale(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: reduced ? Duration.zero : const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: active ? FluteColors.surfaceHigh : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: active ? FluteColors.accent.withValues(alpha: 0.7) : FluteColors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(mode.name, style: TextStyle(fontSize: 18, color: active ? FluteColors.accent : FluteColors.text)),
+              const SizedBox(height: 2),
+              Text(mode.tagline, style: const TextStyle(color: FluteColors.muted, fontSize: 13)),
+            ],
+          ),
         ),
       ),
     );

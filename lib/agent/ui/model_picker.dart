@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:math' show max;
 
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:material_ui/material_ui.dart';
 
 import '../../app/flute.dart';
 import '../../app/theme.dart';
 import '../llm/model_catalog.dart';
 import '../llm/model_info.dart';
+import 'chat_bubbles.dart' show motion;
 import 'settings_widgets.dart';
 
 const _catalogTimeout = Duration(seconds: 25);
@@ -97,6 +99,7 @@ class _ModelPickerState extends State<_ModelPicker> {
   Future<void> _select(ModelInfo model) async {
     final profile = _profile;
     if (profile == null || _selecting) return;
+    HapticFeedback.selectionClick();
     setState(() {
       _selecting = true;
       _error = null;
@@ -160,30 +163,49 @@ class _ModelPickerState extends State<_ModelPicker> {
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               hintText: 'Search by name or id',
-              prefixIcon: const Icon(Icons.search, size: 20),
+              hintStyle: const TextStyle(color: FluteColors.muted),
+              prefixIcon: const Icon(Icons.search, size: 20, color: FluteColors.muted),
               isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+              border: _fieldBorder(FluteColors.line),
+              enabledBorder: _fieldBorder(FluteColors.line),
+              focusedBorder: _fieldBorder(FluteColors.accent),
             ),
           ),
         ),
-        if (_refreshing || _selecting) const LinearProgressIndicator(minHeight: 2),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 12, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(_error!, style: const TextStyle(color: settingsAlert, fontSize: 13)),
+        // Progress and errors slide in and out instead of jumping the list below them.
+        AnimatedSize(
+          duration: motion(context, 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_refreshing || _selecting) const LinearProgressIndicator(minHeight: 2),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 12, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(_error!, style: const TextStyle(color: settingsAlert, fontSize: 13)),
+                      ),
+                      if (!_refreshing) TextButton(onPressed: _retry, child: const Text('Retry')),
+                    ],
+                  ),
                 ),
-                if (!_refreshing)
-                  TextButton(onPressed: _retry, child: const Text('Retry')),
-              ],
-            ),
+            ],
           ),
+        ),
         Expanded(child: _list(shown, profile)),
       ],
     );
   }
+
+  static OutlineInputBorder _fieldBorder(Color color) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: color),
+      );
 
   Widget _list(List<ModelInfo> shown, ProviderProfile profile) {
     if (_models.isEmpty) {
@@ -204,6 +226,7 @@ class _ModelPickerState extends State<_ModelPicker> {
       );
     }
     return ListView.builder(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.only(bottom: 16),
       itemCount: shown.length,
       itemBuilder: (_, i) {
@@ -238,6 +261,8 @@ class _ModelRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       enabled: enabled,
+      selected: selected,
+      selectedColor: FluteColors.accent,
       onTap: enabled ? onTap : null,
       title: Text(model.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(model.id, maxLines: 1, overflow: TextOverflow.ellipsis, style: settingsMuted),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:material_ui/material_ui.dart';
 
 import '../../app/flute.dart';
@@ -14,7 +15,7 @@ import 'model_picker.dart';
 
 enum _Menu { newChat, settings }
 
-/// The "Ask Flute" chat: a reverse list so the newest row sits at the bottom and the view stays
+/// The "Ask" chat: a reverse list so the newest row sits at the bottom and the view stays
 /// pinned there until the person scrolls up.
 class AgentPage extends StatefulWidget {
   const AgentPage({super.key, required this.flute, required this.onClose});
@@ -28,6 +29,10 @@ class AgentPage extends StatefulWidget {
 
 class _AgentPageState extends State<AgentPage> {
   final _scroll = ScrollController();
+  final _draft = TextEditingController();
+
+  /// True once the reader has scrolled away from the newest row.
+  final _awayFromLatest = ValueNotifier<bool>(false);
 
   /// Rows that have been on screen. Only a row seen for the first time plays its arrival.
   final Set<String> _shown = {};
@@ -39,6 +44,7 @@ class _AgentPageState extends State<AgentPage> {
   void initState() {
     super.initState();
     _shown.addAll(_runtime.items.map((item) => item.id));
+    _scroll.addListener(_onScroll);
     widget.flute.confirm.addListener(_onConfirmChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onConfirmChanged());
   }
@@ -46,8 +52,16 @@ class _AgentPageState extends State<AgentPage> {
   @override
   void dispose() {
     widget.flute.confirm.removeListener(_onConfirmChanged);
+    _scroll.removeListener(_onScroll);
     _scroll.dispose();
+    _draft.dispose();
+    _awayFromLatest.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    final away = _scroll.hasClients && _scroll.offset > 160;
+    if (_awayFromLatest.value != away) _awayFromLatest.value = away;
   }
 
   void _onConfirmChanged() {
@@ -62,9 +76,18 @@ class _AgentPageState extends State<AgentPage> {
 
   void _send(String text, List<Attachment> attachments) {
     unawaited(_runtime.send(text, attachments: attachments));
-    if (_scroll.hasClients) {
-      unawaited(_scroll.animateTo(0, duration: const Duration(milliseconds: 240), curve: Curves.easeOutCubic));
-    }
+    _toLatest();
+  }
+
+  /// Suggestions put their text in the box; the person reads it and sends.
+  void _fill(String prompt) {
+    HapticFeedback.selectionClick();
+    _draft.value = TextEditingValue(text: prompt, selection: TextSelection.collapsed(offset: prompt.length));
+  }
+
+  void _toLatest() {
+    if (!_scroll.hasClients) return;
+    unawaited(_scroll.animateTo(0, duration: motion(context, 240), curve: Curves.easeOutCubic));
   }
 
   void _newChat() {
@@ -97,7 +120,7 @@ class _AgentPageState extends State<AgentPage> {
                 if (setupProblem != null) _SetupBanner(problem: setupProblem, onSettings: _openSettings),
                 Expanded(
                   child: items.isEmpty && !busy
-                      ? _EmptyState(onPick: (prompt) => _send(prompt, const []))
+                      ? _EmptyState(onPick: _fill)
                       : _messageList(items, busy),
                 ),
                 Composer(
@@ -105,6 +128,7 @@ class _AgentPageState extends State<AgentPage> {
                   hints: _runtime.slashHints,
                   onSend: _send,
                   onStop: _runtime.cancel,
+                  controller: _draft,
                 ),
               ],
             ),
@@ -123,7 +147,7 @@ class _AgentPageState extends State<AgentPage> {
         icon: const Icon(Icons.arrow_back),
         onPressed: widget.onClose,
       ),
-      title: const Text('Ask Flute', style: TextStyle(fontWeight: FontWeight.w300)),
+      title: const Text('Ask', style: TextStyle(fontWeight: FontWeight.w300)),
       actions: [
         IconButton(
           tooltip: 'Voice',
@@ -165,22 +189,36 @@ class _AgentPageState extends State<AgentPage> {
     // The reply's own caret or dots show while it streams; otherwise dots say "still working".
     final showTyping = busy && !(last is AssistantItem && last.streaming);
     final extra = showTyping ? 1 : 0;
-    return ListView.builder(
-      controller: _scroll,
-      reverse: true,
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      itemCount: items.length + extra,
-      itemBuilder: (context, index) {
-        if (index < extra) {
-          return const Padding(
-            padding: EdgeInsets.only(bottom: 14),
-            child: Align(alignment: Alignment.centerLeft, child: TypingDots()),
-          );
-        }
-        final item = items[items.length - 1 - (index - extra)];
-        return _Row(key: ValueKey(item.id), item: item, arrive: _shown.add(item.id));
-      },
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: ListView.builder(
+            controller: _scroll,
+            reverse: true,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            itemCount: items.length + extra,
+            itemBuilder: (context, index) {
+              if (index < extra) {
+                return const Padding(
+                  padding: EdgeInsets.only(bottom: 14),
+                  child: Align(alignment: Alignment.centerLeft, child: TypingDots()),
+                );
+              }
+              final item = items[items.length - 1 - (index - extra)];
+              return _Row(key: ValueKey(item.id), item: item, arrive: _shown.add(item.id));
+            },
+          ),
+        ),
+        Positioned(
+          right: 16,
+          bottom: 12,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _awayFromLatest,
+            builder: (_, away, _) => _JumpToLatest(visible: away, onPressed: _toLatest),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -214,6 +252,7 @@ Widget _itemWidget(ChatItem item) => switch (item) {
       NoticeItem() => NoticeMessage(item: item),
     };
 
+/// Shows the model in use. Long names truncate so the app bar keeps room for its other buttons.
 class _ModelChip extends StatelessWidget {
   const _ModelChip({required this.label, required this.onTap});
 
@@ -222,30 +261,83 @@ class _ModelChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Material(
-        color: FluteColors.surface,
-        shape: const StadiumBorder(side: BorderSide(color: FluteColors.line)),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 5, 8, 5),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 150),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13),
+    return Semantics(
+      button: true,
+      label: 'Model: $label',
+      excludeSemantics: true,
+      child: SizedBox(
+        height: 48,
+        child: Center(
+          child: Material(
+            color: FluteColors.surface,
+            shape: const StadiumBorder(side: BorderSide(color: FluteColors.line)),
+            child: InkWell(
+              customBorder: const StadiumBorder(),
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 96),
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    const Icon(Icons.expand_more, size: 16, color: FluteColors.muted),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A round button over the list that appears once the reader has scrolled up.
+class _JumpToLatest extends StatelessWidget {
+  const _JumpToLatest({required this.visible, required this.onPressed});
+
+  final bool visible;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !visible,
+      child: ExcludeSemantics(
+        excluding: !visible,
+        child: AnimatedOpacity(
+          duration: motion(context, 180),
+          opacity: visible ? 1 : 0,
+          child: AnimatedScale(
+            duration: motion(context, 240),
+            curve: Curves.easeOutBack,
+            scale: visible ? 1 : 0.8,
+            child: Material(
+              color: FluteColors.surfaceHigh,
+              shape: const CircleBorder(side: BorderSide(color: FluteColors.line)),
+              child: Tooltip(
+                message: 'Jump to latest',
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    onPressed();
+                  },
+                  child: const SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Icon(Icons.arrow_downward_rounded, size: 20, color: FluteColors.text),
                   ),
                 ),
-                const Icon(Icons.expand_more, size: 16, color: FluteColors.muted),
-              ],
+              ),
             ),
           ),
         ),
@@ -291,15 +383,17 @@ class _SetupBanner extends StatelessWidget {
   }
 }
 
+/// The first screen: what Flute does and four things to try. A suggestion fills the box.
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onPick});
 
   final ValueChanged<String> onPick;
 
-  static const _prompts = [
-    "What's on my calendar today?",
-    'Make a note: buy milk and eggs',
-    'What time is it in Tokyo?',
+  static const _suggestions = [
+    (icon: Icons.timer_outlined, text: 'Start 25 min of focus'),
+    (icon: Icons.event_outlined, text: "What's on my calendar today?"),
+    (icon: Icons.brush_outlined, text: 'Draw a duck in a raincoat'),
+    (icon: Icons.travel_explore, text: 'Search the latest Flutter release'),
   ];
 
   @override
@@ -313,49 +407,28 @@ class _EmptyState extends StatelessWidget {
             const Text('What can I help with?', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w300)),
             const SizedBox(height: 10),
             const Text(
-              'I can read and change your calendar, contacts and notes, and use the tools and skills you add. '
+              'I can control the launcher, check your calendar, draw pictures and search the web. '
               'I ask before I change anything.',
               textAlign: TextAlign.center,
               style: TextStyle(color: FluteColors.muted, fontSize: 14, height: 1.4),
             ),
             const SizedBox(height: 24),
-            for (final prompt in _prompts)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _PromptTile(text: prompt, onTap: () => onPick(prompt)),
-              ),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final suggestion in _suggestions)
+                  ActionChip(
+                    avatar: Icon(suggestion.icon, size: 16, color: FluteColors.muted),
+                    label: Text(suggestion.text, style: const TextStyle(fontSize: 13.5)),
+                    backgroundColor: FluteColors.surface,
+                    side: const BorderSide(color: FluteColors.line),
+                    onPressed: () => onPick(suggestion.text),
+                  ),
+              ],
+            ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PromptTile extends StatelessWidget {
-  const _PromptTile({required this.text, required this.onTap});
-
-  final String text;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: FluteColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: FluteColors.line),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-          child: Row(
-            children: [
-              Expanded(child: Text(text, style: const TextStyle(fontSize: 14.5))),
-              const Icon(Icons.north_east, size: 16, color: FluteColors.muted),
-            ],
-          ),
         ),
       ),
     );

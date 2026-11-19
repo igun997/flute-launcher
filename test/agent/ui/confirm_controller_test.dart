@@ -5,7 +5,10 @@ import 'package:focus_launcher/agent/ui/confirm_sheet.dart';
 import 'package:material_ui/material_ui.dart';
 
 class _FakeTool extends AgentTool {
-  _FakeTool(this.name);
+  _FakeTool(this.name, {Map<String, dynamic>? schema})
+      : _schema = schema ?? const {'type': 'object', 'properties': {}};
+
+  final Map<String, dynamic> _schema;
 
   @override
   final String name;
@@ -17,7 +20,7 @@ class _FakeTool extends AgentTool {
   String get description => 'fake';
 
   @override
-  Map<String, dynamic> get parameters => const {'type': 'object', 'properties': {}};
+  Map<String, dynamic> get parameters => _schema;
 
   @override
   ToolRisk get risk => ToolRisk.write;
@@ -29,8 +32,30 @@ class _FakeTool extends AgentTool {
   Future<ToolResult> run(Map<String, dynamic> args) async => const ToolResult('ok');
 }
 
-ConfirmRequest _request(String tool, String summary, {Map<String, dynamic> arguments = const {}}) =>
-    ConfirmRequest(tool: _FakeTool(tool), summary: summary, arguments: arguments);
+ConfirmRequest _request(
+  String tool,
+  String summary, {
+  Map<String, dynamic> arguments = const {},
+  Map<String, dynamic>? schema,
+}) =>
+    ConfirmRequest(tool: _FakeTool(tool, schema: schema), summary: summary, arguments: arguments);
+
+Future<void> _openSheet(WidgetTester tester, ConfirmController confirm) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => FilledButton(
+            onPressed: () => showConfirmSheet(context, confirm),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('open'));
+  await tester.pumpAndSettle();
+}
 
 void main() {
   test('asks one request at a time, in arrival order', () async {
@@ -120,6 +145,85 @@ void main() {
     expect(await waiting, ConfirmDecision.deny);
   });
 
+  group('confirm view', () {
+    test('a multi-line summary shows its code once, in full, as the body', () {
+      const code = "import os\nprint(os.listdir('.'))";
+      final view = confirmView(_request(
+        'run_python',
+        'Run Python in the sandbox:\n$code',
+        arguments: {'code': code},
+        schema: const {
+          'type': 'object',
+          'properties': {'code': {'type': 'string'}},
+          'required': ['code'],
+        },
+      ));
+
+      expect(view.headline, 'Run Python in the sandbox:');
+      expect(view.body, code);
+      expect(view.details, isEmpty);
+    });
+
+    test('empty, null, zero and default-looking arguments are dropped', () {
+      final view = confirmView(_request(
+        'create_reminder',
+        "Create reminder 'Stretch'",
+        arguments: {
+          'title': 'Stretch',
+          'weekdays': <String>[],
+          'every_minutes': 0,
+          'model': '',
+          'count': 1,
+          'note': null,
+          'room': 'Office',
+        },
+        schema: const {
+          'type': 'object',
+          'properties': {
+            'title': {'type': 'string'},
+            'weekdays': {'type': 'array'},
+            'every_minutes': {'type': 'integer'},
+            'model': {'type': 'string'},
+            'count': {'type': 'integer', 'default': 1},
+            'note': {'type': 'string'},
+            'room': {'type': 'string'},
+          },
+          'required': ['title'],
+        },
+      ));
+
+      expect(view.headline, "Create reminder 'Stretch'");
+      expect([for (final e in view.details) e.key], ['room']);
+    });
+
+    test('a required zero is kept', () {
+      final view = confirmView(_request(
+        'set_interval',
+        'Set the interval',
+        arguments: {'every_minutes': 0},
+        schema: const {
+          'type': 'object',
+          'properties': {'every_minutes': {'type': 'integer'}},
+          'required': ['every_minutes'],
+        },
+      ));
+
+      expect([for (final e in view.details) e.key], ['every_minutes']);
+    });
+
+    test('one short value opens the details by itself, several stay folded', () {
+      final one = confirmView(_request('notes_create', 'Create note', arguments: {'room': 'Office'}));
+      final two = confirmView(_request(
+        'notes_create',
+        'Create note',
+        arguments: {'room': 'Office', 'notes': 'Bring the blue folder'},
+      ));
+
+      expect(one.detailsOpenByDefault, isTrue);
+      expect(two.detailsOpenByDefault, isFalse);
+    });
+  });
+
   group('confirm sheet', () {
     testWidgets('allow for this chat answers the request and closes the sheet', (tester) async {
       final confirm = ConfirmController();
@@ -128,23 +232,10 @@ void main() {
         "Create note 'Milk'",
         arguments: {'title': 'Milk'},
       ));
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Builder(
-              builder: (context) => FilledButton(
-                onPressed: () => showConfirmSheet(context, confirm),
-                child: const Text('open'),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await _openSheet(tester, confirm);
 
       expect(find.text("Create note 'Milk'"), findsOneWidget);
-      expect(find.text('Milk'), findsOneWidget);
+      expect(find.text('Milk'), findsNothing, reason: 'the headline already states the title');
 
       await tester.tap(find.text('Allow for this chat'));
       await tester.pumpAndSettle();
@@ -153,23 +244,31 @@ void main() {
       expect(find.text("Create note 'Milk'"), findsNothing);
     });
 
+    testWidgets('details stay folded until the person opens them', (tester) async {
+      final confirm = ConfirmController();
+      final answer = confirm.ask(_request(
+        'notes_create',
+        'Create note',
+        arguments: {'room': 'Office', 'notes': 'Bring the blue folder'},
+      ));
+      await _openSheet(tester, confirm);
+
+      expect(find.text('Office'), findsNothing);
+
+      await tester.tap(find.text('Details'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Office'), findsOneWidget);
+
+      await tester.tap(find.text('Deny'));
+      await tester.pumpAndSettle();
+      expect(await answer, ConfirmDecision.deny);
+    });
+
     testWidgets('back denies the request', (tester) async {
       final confirm = ConfirmController();
       final answer = confirm.ask(_request('notes_delete', 'Delete note Milk'));
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Builder(
-              builder: (context) => FilledButton(
-                onPressed: () => showConfirmSheet(context, confirm),
-                child: const Text('open'),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await _openSheet(tester, confirm);
 
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();

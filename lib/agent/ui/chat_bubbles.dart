@@ -186,7 +186,7 @@ class AssistantMessage extends StatelessWidget {
         // Nothing generated (empty or error-only turn): no stats.
         if (hasText || hasReasoning)
           Padding(
-            padding: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.only(top: 4),
             child: _GenerationStats(item: item, clock: clock ?? DateTime.now),
           ),
       ],
@@ -249,7 +249,13 @@ class _GenerationStatsState extends State<_GenerationStats> {
     if (firstToken != null) parts.add('first token ${_formatSeconds(firstToken)}');
     return Text(
       parts.join(' · '),
-      style: const TextStyle(color: FluteColors.muted, fontSize: 12, height: 1.3),
+      // Tabular figures keep the digits from nudging the line while the numbers climb.
+      style: const TextStyle(
+        color: FluteColors.muted,
+        fontSize: 11.5,
+        height: 1.3,
+        fontFeatures: [FontFeature.tabularFigures()],
+      ),
     );
   }
 }
@@ -325,7 +331,7 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
   }
 }
 
-/// Three dots that breathe while a reply is on its way. Static when motion is reduced.
+/// Three small dots that breathe slowly while a reply is on its way. Static when motion is reduced.
 class TypingDots extends StatelessWidget {
   const TypingDots({super.key});
 
@@ -339,7 +345,7 @@ class TypingDots extends StatelessWidget {
         children: [
           for (var i = 0; i < 3; i++)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2.5),
+              padding: const EdgeInsets.symmetric(horizontal: 3),
               child: _dot(still, i),
             ),
         ],
@@ -349,17 +355,18 @@ class TypingDots extends StatelessWidget {
 
   Widget _dot(bool still, int index) {
     final dot = Container(
-      width: 7,
-      height: 7,
+      width: 6,
+      height: 6,
       decoration: const BoxDecoration(color: FluteColors.muted, shape: BoxShape.circle),
     );
     if (still) return dot;
     return dot
         .animate(onPlay: (c) => c.repeat(reverse: true))
-        .fade(begin: 0.25, end: 1, duration: 450.ms, delay: (index * 150).ms, curve: Curves.easeInOut);
+        .fade(begin: 0.3, end: 1, duration: 600.ms, delay: (index * 160).ms, curve: Curves.easeInOut);
   }
 }
 
+/// One tool call: what it is, its state, and (tapped open) its output. Pictures appear under it.
 class ToolCard extends StatefulWidget {
   const ToolCard({super.key, required this.item});
 
@@ -377,46 +384,55 @@ class _ToolCardState extends State<ToolCard> {
     final item = widget.item;
     final output = item.output;
     final expandable = output != null && output.trim().isNotEmpty;
+    final headline = item.summary.trim().split('\n').first;
     return Material(
       color: FluteColors.surface,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         side: const BorderSide(color: FluteColors.line),
       ),
       child: InkWell(
         onTap: expandable ? () => setState(() => _open = !_open) : null,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
-                  Icon(toolSourceIcon(item.source), size: 18, color: FluteColors.muted),
+                  Icon(toolSourceIcon(item.source), size: 17, color: FluteColors.muted),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          item.summary,
+                          headline,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 14, height: 1.3),
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           '${toolSourceLabel(item.source)} · ${item.toolName}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: FluteColors.muted, fontSize: 11),
+                          style: const TextStyle(color: FluteColors.muted, fontSize: 11.5),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _StateChip(state: item.state),
+                  _StateLabel(state: item.state),
+                  if (expandable)
+                    AnimatedRotation(
+                      turns: _open ? 0.5 : 0,
+                      duration: motion(context, 200),
+                      curve: Curves.easeOutCubic,
+                      child: const Icon(Icons.expand_more, size: 18, color: FluteColors.muted),
+                    ),
                 ],
               ),
               if (item.makesImages)
@@ -427,8 +443,8 @@ class _ToolCardState extends State<ToolCard> {
                   child: ToolImages(item: item),
                 ),
               AnimatedSize(
-                duration: motion(context, 180),
-                curve: Curves.easeOut,
+                duration: motion(context, 220),
+                curve: Curves.easeOutCubic,
                 alignment: Alignment.topCenter,
                 child: _open && output != null && expandable
                     ? Padding(
@@ -458,8 +474,9 @@ class _ToolCardState extends State<ToolCard> {
   }
 }
 
-class _StateChip extends StatelessWidget {
-  const _StateChip({required this.state});
+/// The tool's state as quiet text with a small mark. Only waiting and failed colour it.
+class _StateLabel extends StatelessWidget {
+  const _StateLabel({required this.state});
 
   final ToolState state;
 
@@ -469,28 +486,21 @@ class _StateChip extends StatelessWidget {
     return AnimatedSwitcher(
       duration: motion(context, 180),
       switchInCurve: Curves.easeOut,
-      child: Container(
+      child: Row(
         key: ValueKey(state),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: spec.color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (state == ToolState.running)
-              SizedBox(
-                width: 10,
-                height: 10,
-                child: CircularProgressIndicator(strokeWidth: 1.5, color: spec.color),
-              )
-            else if (spec.icon != null)
-              Icon(spec.icon, size: 12, color: spec.color),
-            const SizedBox(width: 4),
-            Text(spec.label, style: TextStyle(fontSize: 11, color: spec.color)),
-          ],
-        ),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (state == ToolState.running)
+            SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(strokeWidth: 1.5, color: spec.color),
+            )
+          else if (spec.icon != null)
+            Icon(spec.icon, size: 13, color: spec.color),
+          const SizedBox(width: 4),
+          Text(spec.label, style: TextStyle(fontSize: 12, color: spec.color)),
+        ],
       ),
     );
   }
@@ -498,7 +508,7 @@ class _StateChip extends StatelessWidget {
   static ({String label, Color color, IconData? icon}) _spec(ToolState state) => switch (state) {
         ToolState.waiting => (label: 'Needs OK', color: FluteColors.warn, icon: Icons.front_hand_outlined),
         ToolState.running => (label: 'Running', color: FluteColors.accent, icon: null),
-        ToolState.done => (label: 'Done', color: FluteColors.accent, icon: Icons.check),
+        ToolState.done => (label: 'Done', color: FluteColors.muted, icon: Icons.check),
         ToolState.denied => (label: 'Denied', color: FluteColors.muted, icon: Icons.block),
         ToolState.failed => (label: 'Failed', color: FluteColors.warn, icon: Icons.error_outline),
       };

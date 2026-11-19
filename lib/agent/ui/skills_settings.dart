@@ -15,11 +15,18 @@ class SkillsSection extends StatefulWidget {
   State<SkillsSection> createState() => _SkillsSectionState();
 }
 
+/// Owner keys for the status lines: the control whose action is running or failed.
+const _ownerFind = 'find';
+const _ownerOffers = 'offers';
+const _ownerUpdates = 'updates';
+const _ownerRemove = 'remove';
+
 class _SkillsSectionState extends State<SkillsSection> {
   final _source = TextEditingController();
   String? _busy;
   String? _error;
   String? _notice;
+  String? _owner;
   List<SkillOffer>? _offers;
   String _offersFrom = '';
   final Set<String> _picked = {};
@@ -31,9 +38,10 @@ class _SkillsSectionState extends State<SkillsSection> {
     super.dispose();
   }
 
-  Future<void> _run(String label, Future<void> Function() action) async {
+  Future<void> _run(String label, String owner, Future<void> Function() action) async {
     setState(() {
       _busy = label;
+      _owner = owner;
       _error = null;
       _notice = null;
     });
@@ -49,10 +57,13 @@ class _SkillsSectionState extends State<SkillsSection> {
   Future<void> _find() async {
     final source = _source.text.trim();
     if (source.isEmpty) {
-      setState(() => _error = 'Type owner/repo or a GitHub link.');
+      setState(() {
+        _owner = _ownerFind;
+        _error = 'Type owner/repo or a GitHub link.';
+      });
       return;
     }
-    await _run('Looking in $source...', () async {
+    await _run('Looking in $source...', _ownerFind, () async {
       final offers = await widget.flute.skills.list(source);
       if (!mounted) return;
       setState(() {
@@ -66,7 +77,7 @@ class _SkillsSectionState extends State<SkillsSection> {
     });
   }
 
-  Future<void> _install() => _run('Installing...', () async {
+  Future<void> _install() => _run('Installing...', _ownerOffers, () async {
         final added = await widget.flute.skills.add(_offersFrom, names: _picked.toList());
         if (!mounted) return;
         setState(() {
@@ -80,22 +91,16 @@ class _SkillsSectionState extends State<SkillsSection> {
       });
 
   Future<void> _remove(Skill skill) async {
-    final sure = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Remove ${skill.name}?'),
-        content: const Text('The agent stops using this skill. You can add it again later.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
-        ],
-      ),
+    final sure = await confirmRemove(
+      context,
+      title: 'Remove ${skill.name}?',
+      message: 'The agent stops using this skill. You can add it again later.',
     );
-    if (sure != true) return;
-    await _run('Removing...', () => widget.flute.skills.remove(skill.name));
+    if (!sure) return;
+    await _run('Removing...', _ownerRemove, () => widget.flute.skills.remove(skill.name));
   }
 
-  Future<void> _check() => _run('Checking for updates...', () async {
+  Future<void> _check() => _run('Checking for updates...', _ownerUpdates, () async {
         final names = await widget.flute.skills.check();
         if (!mounted) return;
         setState(() {
@@ -106,7 +111,7 @@ class _SkillsSectionState extends State<SkillsSection> {
         });
       });
 
-  Future<void> _update(List<String> names) => _run('Updating...', () async {
+  Future<void> _update(List<String> names) => _run('Updating...', _ownerUpdates, () async {
         final updated = await widget.flute.skills.update(names);
         if (!mounted) return;
         setState(() {
@@ -121,6 +126,7 @@ class _SkillsSectionState extends State<SkillsSection> {
     final offers = _offers;
     final updates = _updates;
     final busy = _busy;
+    final owner = _owner;
     final working = busy != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,6 +173,8 @@ class _SkillsSectionState extends State<SkillsSection> {
             );
           },
         ),
+        if (busy != null && owner == _ownerRemove) ProgressLine(busy),
+        if (_error != null && owner == _ownerRemove) ErrorLine(_error!),
         const SizedBox(height: 12),
         const Text('Add a skill', style: TextStyle(fontSize: 14)),
         const SizedBox(height: 8),
@@ -181,6 +189,7 @@ class _SkillsSectionState extends State<SkillsSection> {
                 textInputAction: TextInputAction.search,
                 onSubmitted: (_) => _find(),
                 decoration: const InputDecoration(
+                  labelText: 'Skill source',
                   hintText: 'owner/repo or a GitHub link',
                   isDense: true,
                 ),
@@ -190,6 +199,8 @@ class _SkillsSectionState extends State<SkillsSection> {
             FilledButton(onPressed: working ? null : _find, child: const Text('Find')),
           ],
         ),
+        if (busy != null && owner == _ownerFind) ProgressLine(busy),
+        if (_error != null && owner == _ownerFind) ErrorLine(_error!),
         if (offers != null) ...[
           const SizedBox(height: 8),
           if (offers.isNotEmpty) ...[
@@ -229,6 +240,8 @@ class _SkillsSectionState extends State<SkillsSection> {
                 ),
             ],
           ),
+          if (busy != null && owner == _ownerOffers) ProgressLine(busy),
+          if (_error != null && owner == _ownerOffers) ErrorLine(_error!),
         ],
         const SizedBox(height: 8),
         Row(
@@ -243,8 +256,8 @@ class _SkillsSectionState extends State<SkillsSection> {
             ],
           ],
         ),
-        if (busy != null) ProgressLine(busy),
-        if (_error != null) ErrorLine(_error!),
+        if (busy != null && owner == _ownerUpdates) ProgressLine(busy),
+        if (_error != null && owner == _ownerUpdates) ErrorLine(_error!),
         if (_notice != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),

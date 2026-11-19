@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -47,6 +48,7 @@ class ToolImages extends StatelessWidget {
 
 /// The animated canvas shown while a picture is being made. The shader runs on the GPU; the clock
 /// stops with TickerMode and is a single still frame when the system asks for reduced motion.
+/// The seconds label ticks once a second, so the text itself is not rebuilt every frame.
 class CreatingImage extends StatefulWidget {
   const CreatingImage({super.key});
 
@@ -60,6 +62,8 @@ class _CreatingImageState extends State<CreatingImage> with SingleTickerProvider
     duration: const Duration(seconds: 60),
   );
   final _watch = Stopwatch()..start();
+  Timer? _ticker;
+  int _seconds = 0;
   ui.FragmentShader? _shader;
 
   @override
@@ -68,6 +72,9 @@ class _CreatingImageState extends State<CreatingImage> with SingleTickerProvider
     _program.then((program) {
       if (!mounted) return;
       setState(() => _shader = program?.fragmentShader());
+    });
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _seconds = _watch.elapsed.inSeconds);
     });
   }
 
@@ -84,6 +91,7 @@ class _CreatingImageState extends State<CreatingImage> with SingleTickerProvider
 
   @override
   void dispose() {
+    _ticker?.cancel();
     _clock.dispose();
     _shader?.dispose();
     super.dispose();
@@ -94,8 +102,8 @@ class _CreatingImageState extends State<CreatingImage> with SingleTickerProvider
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Semantics(
+        container: true,
         label: 'Creating an image',
-        liveRegion: true,
         child: AspectRatio(
           aspectRatio: 1,
           child: ClipRRect(
@@ -112,11 +120,13 @@ class _CreatingImageState extends State<CreatingImage> with SingleTickerProvider
                   alignment: Alignment.bottomLeft,
                   child: Padding(
                     padding: const EdgeInsets.all(14),
-                    child: AnimatedBuilder(
-                      animation: _clock,
-                      builder: (context, _) => Text(
-                        'Creating image  ${_watch.elapsed.inSeconds}s',
-                        style: const TextStyle(color: Color(0xE6FFFFFF), fontSize: 13, letterSpacing: 0.3),
+                    child: Text(
+                      'Creating image · ${_seconds}s',
+                      style: const TextStyle(
+                        color: Color(0xE6FFFFFF),
+                        fontSize: 13,
+                        letterSpacing: 0.3,
+                        fontFeatures: [ui.FontFeature.tabularFigures()],
                       ),
                     ),
                   ),
@@ -175,42 +185,46 @@ class GeneratedImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        PageRouteBuilder<void>(
-          opaque: false,
-          barrierColor: Colors.black,
-          transitionDuration: motion(context, 220),
-          reverseTransitionDuration: motion(context, 180),
-          pageBuilder: (_, _, _) => _FullImage(path: path),
-          transitionsBuilder: (_, animation, _, child) => FadeTransition(opacity: animation, child: child),
+    return Semantics(
+      button: true,
+      label: 'Generated image. Opens full screen.',
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          PageRouteBuilder<void>(
+            opaque: false,
+            barrierColor: Colors.black,
+            transitionDuration: motion(context, 220),
+            reverseTransitionDuration: motion(context, 180),
+            pageBuilder: (_, _, _) => _FullImage(path: path),
+            transitionsBuilder: (_, animation, _, child) => FadeTransition(opacity: animation, child: child),
+          ),
         ),
-      ),
-      child: Hero(
-        tag: path,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Image.file(
-            File(path),
-            width: double.infinity,
-            fit: BoxFit.fitWidth,
-            cacheWidth: 1080,
-            semanticLabel: 'Generated image. Tap to open.',
-            frameBuilder: (context, child, frame, sync) {
-              if (sync) return child;
-              return AnimatedOpacity(
-                opacity: frame == null ? 0 : 1,
-                duration: motion(context, 420),
-                curve: Curves.easeOut,
-                child: AnimatedScale(
-                  scale: frame == null ? 0.97 : 1,
+        child: Hero(
+          tag: path,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Image.file(
+              File(path),
+              width: double.infinity,
+              fit: BoxFit.fitWidth,
+              cacheWidth: 1080,
+              excludeFromSemantics: true,
+              frameBuilder: (context, child, frame, sync) {
+                if (sync) return child;
+                return AnimatedOpacity(
+                  opacity: frame == null ? 0 : 1,
                   duration: motion(context, 420),
-                  curve: Curves.easeOutCubic,
-                  child: child,
-                ),
-              );
-            },
-            errorBuilder: (_, _, _) => const _MissingImage(),
+                  curve: Curves.easeOut,
+                  child: AnimatedScale(
+                    scale: frame == null ? 0.97 : 1,
+                    duration: motion(context, 420),
+                    curve: Curves.easeOutCubic,
+                    child: child,
+                  ),
+                );
+              },
+              errorBuilder: (_, _, _) => const _MissingImage(),
+            ),
           ),
         ),
       ),
@@ -218,18 +232,32 @@ class GeneratedImage extends StatelessWidget {
   }
 }
 
+/// Shown when a saved picture's file has gone from the phone. Quiet, one line.
 class _MissingImage extends StatelessWidget {
   const _MissingImage();
 
   @override
   Widget build(BuildContext context) => Container(
-        height: 96,
+        height: 72,
         alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
           color: FluteColors.surfaceHigh,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: const Text('This image is no longer on the phone.', style: TextStyle(color: FluteColors.muted, fontSize: 13)),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.broken_image_outlined, size: 18, color: FluteColors.muted),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                'This image is no longer on the phone.',
+                style: TextStyle(color: FluteColors.muted, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
       );
 }
 

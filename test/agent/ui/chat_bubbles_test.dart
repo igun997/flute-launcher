@@ -48,4 +48,25 @@ void main() {
     expect(find.text('What happens here?'), findsOneWidget);
     expect(find.text('clip.mp4'), findsOneWidget);
   });
+
+  testWidgets('a tool card keeps its output folded until the card is tapped', (tester) async {
+    final item = ToolItem(
+      id: 't1',
+      toolName: 'notes_create',
+      source: 'notes',
+      summary: "Create note 'Milk'\nextra",
+    )
+      ..state = ToolState.done
+      ..output = 'Saved note 42';
+    await tester.pumpWidget(_host(ToolCard(item: item)));
+
+    expect(find.text("Create note 'Milk'"), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.text('Saved note 42'), findsNothing);
+
+    await tester.tap(find.text("Create note 'Milk'"));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved note 42'), findsOneWidget);
+  });
 }
