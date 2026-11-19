@@ -414,7 +414,18 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
             'Python 3.12 on this phone, no account needed. About $sizeMb MB, downloaded once.',
             style: settingsMuted,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Allow internet', style: TextStyle(fontSize: 15)),
+            subtitle: const Text(
+              'Python can fetch public web pages and APIs (urllib). Your phone and home network stay blocked.',
+              style: settingsMuted,
+            ),
+            value: widget.manager.localNetwork,
+            onChanged: idle ? (v) => widget.manager.setLocalNetwork(v) : null,
+          ),
+          const SizedBox(height: 4),
           if (_localInstalled)
             TextButton(
               onPressed: idle ? _deleteLocal : null,

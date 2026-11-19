@@ -88,6 +88,9 @@ class ToolItem extends ChatItem {
 
   /// Picture files the tool produced.
   List<String> images = const [];
+
+  /// Other files the tool produced (reports, CSV, PDF), and pictures that can be saved or shared.
+  List<ToolFile> files = const [];
   final String source;
   final String summary;
   ToolState state = ToolState.waiting;
@@ -439,6 +442,7 @@ class AgentRuntime extends ChangeNotifier {
     }
     item.state = result.isError ? ToolState.failed : ToolState.done;
     item.images = result.images;
+    item.files = result.files;
     item.output = result.text.length > 4000 ? '${result.text.substring(0, 4000)}...' : result.text;
     notifyListeners();
     final forModel = result.text.length > 12000 ? '${result.text.substring(0, 12000)}...(truncated)' : result.text;

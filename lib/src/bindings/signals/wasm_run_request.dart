@@ -12,6 +12,7 @@ class WasmRunRequest {
     required this.stdin,
     required this.timeoutMs,
     required this.maxMemoryMb,
+    required this.network,
   });
 
   static WasmRunRequest deserialize(BinaryDeserializer deserializer) {
@@ -23,6 +24,7 @@ class WasmRunRequest {
       stdin: deserializer.deserializeString(),
       timeoutMs: deserializer.deserializeUint32(),
       maxMemoryMb: deserializer.deserializeUint32(),
+      network: deserializer.deserializeBool(),
     );
     deserializer.decreaseContainerDepth();
     return instance;
@@ -43,6 +45,7 @@ class WasmRunRequest {
   final String stdin;
   final int timeoutMs;
   final int maxMemoryMb;
+  final bool network;
 
   WasmRunRequest copyWith({
     int? id,
@@ -51,6 +54,7 @@ class WasmRunRequest {
     String? stdin,
     int? timeoutMs,
     int? maxMemoryMb,
+    bool? network,
   }) {
     return WasmRunRequest(
       id: id ?? this.id,
@@ -59,6 +63,7 @@ class WasmRunRequest {
       stdin: stdin ?? this.stdin,
       timeoutMs: timeoutMs ?? this.timeoutMs,
       maxMemoryMb: maxMemoryMb ?? this.maxMemoryMb,
+      network: network ?? this.network,
     );
   }
 
@@ -70,6 +75,7 @@ class WasmRunRequest {
     serializer.serializeString(stdin);
     serializer.serializeUint32(timeoutMs);
     serializer.serializeUint32(maxMemoryMb);
+    serializer.serializeBool(network);
     serializer.decreaseContainerDepth();
   }
 
@@ -90,7 +96,8 @@ class WasmRunRequest {
       && listEquals(env, other.env)
       && stdin == other.stdin
       && timeoutMs == other.timeoutMs
-      && maxMemoryMb == other.maxMemoryMb;
+      && maxMemoryMb == other.maxMemoryMb
+      && network == other.network;
   }
 
   @override
@@ -101,6 +108,7 @@ class WasmRunRequest {
         stdin,
         timeoutMs,
         maxMemoryMb,
+        network,
       );
 
   @override
@@ -114,7 +122,8 @@ class WasmRunRequest {
         'env: $env, '
         'stdin: $stdin, '
         'timeoutMs: $timeoutMs, '
-        'maxMemoryMb: $maxMemoryMb'
+        'maxMemoryMb: $maxMemoryMb, '
+        'network: $network'
         ')';
       return true;
     }());

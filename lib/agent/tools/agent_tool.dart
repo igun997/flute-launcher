@@ -3,18 +3,38 @@ import '../llm/llm_types.dart';
 /// Whether a tool only looks at things or changes them. Writes always ask the user first.
 enum ToolRisk { read, write }
 
+/// A file a tool produced that the user can open, share or save: a chart, a CSV, a PDF.
+class ToolFile {
+  const ToolFile({required this.path, required this.name, required this.mime, required this.bytes});
+
+  /// Absolute path inside the app's own storage.
+  final String path;
+
+  /// The name shown to the user and used when saving.
+  final String name;
+  final String mime;
+  final int bytes;
+
+  bool get isImage => const {'image/png', 'image/jpeg', 'image/webp', 'image/gif'}.contains(mime);
+}
+
 class ToolResult {
-  const ToolResult(this.text, {this.isError = false, this.images = const []});
+  const ToolResult(this.text, {this.isError = false, this.images = const [], this.files = const []});
   const ToolResult.error(this.text)
       : isError = true,
-        images = const [];
+        images = const [],
+        files = const [];
 
   /// What the model reads back. Keep it compact: it costs tokens.
   final String text;
   final bool isError;
 
-  /// Files the chat shows under the tool call. The model never receives them.
+  /// Picture files the chat shows under the tool call. The model never receives them.
   final List<String> images;
+
+  /// Files the chat lists under the tool call with open, share and save actions. Pictures among
+  /// them are shown as pictures. The model never receives them.
+  final List<ToolFile> files;
 }
 
 /// One thing the agent can do: a built-in (calendar, contacts, notes) or an MCP tool.

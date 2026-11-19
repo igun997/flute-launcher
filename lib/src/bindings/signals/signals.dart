@@ -33,6 +33,8 @@ part 'sse_chunk.dart';
 part 'sse_delta.dart';
 part 'wasm_load_request.dart';
 part 'wasm_load_response.dart';
+part 'wasm_net_request.dart';
+part 'wasm_net_response.dart';
 part 'wasm_run_request.dart';
 part 'wasm_run_response.dart';
 part 'signal_handlers.dart';

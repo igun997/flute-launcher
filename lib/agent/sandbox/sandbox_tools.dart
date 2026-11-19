@@ -64,6 +64,9 @@ class _PythonTool extends _SandboxTool {
   @override
   String get description =>
       'Run Python 3 code in an isolated sandbox. Returns stdout, stderr and the exit code. '
+      'The sandbox can reach the public internet: remote sandboxes have full network and pip; the local '
+      'sandbox (standard library only, no pip) can fetch http(s) URLs with urllib.request, for example '
+      'urllib.request.urlopen(url).read(), but cannot reach localhost or home-network addresses. '
       'Files written with sandbox_write_file are visible to later runs on remote sandboxes.';
 
   @override

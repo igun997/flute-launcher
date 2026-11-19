@@ -154,6 +154,8 @@ pub struct WasmRunRequest {
   pub stdin: String,
   pub timeout_ms: u32,
   pub max_memory_mb: u32,
+  /// Lets a `python -c <code>` program reach the network through Dart (see `wasm::NetLink`).
+  pub network: bool,
 }
 
 /// Captured output is capped at 1 MiB per stream. `error` is empty unless the run could not
@@ -165,4 +167,20 @@ pub struct WasmRunResponse {
   pub stdout: String,
   pub stderr: String,
   pub error: String,
+}
+
+/// One HTTP request a sandboxed program made. `request` is the JSON line the program wrote
+/// (`m` method, `u` url, `h` headers, `b` base64 body). Dart answers with [WasmNetResponse].
+#[derive(Serialize, RustSignal)]
+pub struct WasmNetRequest {
+  pub call: u32,
+  pub request: String,
+}
+
+/// The answer to one [WasmNetRequest]: one JSON line with `status`, `reason`, `headers`, `body`
+/// (base64), or `error`.
+#[derive(Deserialize, DartSignal)]
+pub struct WasmNetResponse {
+  pub call: u32,
+  pub response: String,
 }

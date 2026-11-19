@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 import '../../rust/rust_core.dart';
+import 'local_net.dart';
 import 'sandbox_provider.dart';
 
 /// Outcome of one WASI run, as returned by the Rust runtime.
@@ -35,11 +36,14 @@ abstract class WasmRuntime {
     required String stdin,
     required int timeoutMs,
     required int maxMemoryMb,
+    bool network = false,
   });
 }
 
 class RustWasmRuntime implements WasmRuntime {
-  const RustWasmRuntime();
+  RustWasmRuntime({LocalNetBridge? net}) : _net = net ?? LocalNetBridge();
+
+  final LocalNetBridge _net;
 
   @override
   Future<void> load(Uint8List module) async {
@@ -53,13 +57,16 @@ class RustWasmRuntime implements WasmRuntime {
     required String stdin,
     required int timeoutMs,
     required int maxMemoryMb,
+    bool network = false,
   }) async {
+    if (network) RustCore.instance.netHandler = _net.handle;
     final r = await RustCore.instance.wasmRun(
       argv: argv,
       env: env,
       stdin: stdin,
       timeoutMs: timeoutMs,
       maxMemoryMb: maxMemoryMb,
+      network: network,
     );
     return WasmOutcome(
       exitCode: r.exitCode,
@@ -80,7 +87,9 @@ class LocalWasmProvider implements SandboxProvider {
     required http.Client client,
     Uri? url,
     this.stallTimeout = const Duration(seconds: 60),
+    bool Function()? allowNetwork,
   }) : _runtime = runtime,
+       _allowNetwork = allowNetwork ?? (() => false),
        _client = client,
        url = url ?? pythonUrl;
 
@@ -98,6 +107,7 @@ class LocalWasmProvider implements SandboxProvider {
   final Future<Directory> Function() directory;
   final Uri url;
   final Duration stallTimeout;
+  final bool Function() _allowNetwork;
   final WasmRuntime _runtime;
   final http.Client _client;
 
@@ -191,7 +201,7 @@ class LocalWasmProvider implements SandboxProvider {
       throw const SandboxException('The local Python runtime has no saved sandboxes.');
     }
     await _ensureLoaded();
-    return _LocalWasmSession(_runtime);
+    return _LocalWasmSession(_runtime, network: _allowNetwork());
   }
 
   /// Loads the module into Rust once per process; Rust keeps it afterwards.
@@ -214,9 +224,12 @@ class LocalWasmProvider implements SandboxProvider {
 }
 
 class _LocalWasmSession implements SandboxSession {
-  _LocalWasmSession(this._runtime);
+  _LocalWasmSession(this._runtime, {required this.network});
 
   final WasmRuntime _runtime;
+
+  /// Public web addresses may be fetched (through the Dart bridge) while the program runs.
+  final bool network;
   bool _closed = false;
 
   @override
@@ -228,11 +241,13 @@ class _LocalWasmSession implements SandboxSession {
     final WasmOutcome out;
     try {
       out = await _runtime.run(
-        argv: const ['python', '-'],
+        // The program is an argument, not stdin: with networking on, stdin carries the answers.
+        argv: ['python', '-c', code],
         env: const ['PYTHONDONTWRITEBYTECODE=1'],
-        stdin: code,
+        stdin: '',
         timeoutMs: timeout.inMilliseconds,
         maxMemoryMb: LocalWasmProvider._runMemoryMb,
+        network: network,
       );
     } on RustException catch (e) {
       throw SandboxException('Local Python failed: ${e.message}');

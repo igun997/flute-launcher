@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:rinf/rinf.dart';
@@ -33,6 +34,10 @@ class RustCore {
   final _pending = <int, Completer<Object>>{};
   final _sseListeners = <int, void Function(SseDelta)>{};
   final _subscriptions = <StreamSubscription<Object?>>[];
+
+  /// Answers the HTTP requests a networked local Python run makes (one JSON line in, one out).
+  /// Without it every request gets an error answer.
+  Future<String> Function(String request)? netHandler;
   int _nextId = 1;
   int _nextStream = 1;
   bool _started = false;
@@ -49,6 +54,20 @@ class RustCore {
     _listen<CategorizeResponse>(CategorizeResponse.rustSignalStream, (m) => m.id);
     _listen<WasmLoadResponse>(WasmLoadResponse.rustSignalStream, (m) => m.id);
     _listen<WasmRunResponse>(WasmRunResponse.rustSignalStream, (m) => m.id);
+    _subscriptions.add(WasmNetRequest.rustSignalStream.listen((pack) async {
+      final handler = netHandler;
+      String reply;
+      if (handler == null) {
+        reply = jsonEncode({'error': 'network is not available'});
+      } else {
+        try {
+          reply = await handler(pack.message.request);
+        } catch (_) {
+          reply = jsonEncode({'error': 'the network request failed'});
+        }
+      }
+      WasmNetResponse(call: pack.message.call, response: reply).sendSignalToRust();
+    }));
     _subscriptions.add(ArchiveResponse.rustSignalStream.listen((pack) {
       _pending.remove(pack.message.id)?.complete(pack);
     }));
@@ -161,6 +180,7 @@ class RustCore {
     required String stdin,
     required int timeoutMs,
     required int maxMemoryMb,
+    bool network = false,
   }) {
     final id = _nextId++;
     return _call<WasmRunResponse>(
@@ -172,6 +192,7 @@ class RustCore {
         stdin: stdin,
         timeoutMs: timeoutMs,
         maxMemoryMb: maxMemoryMb,
+        network: network,
       ).sendSignalToRust(),
     );
   }

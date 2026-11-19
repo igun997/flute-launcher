@@ -73,6 +73,15 @@ final assignRustSignal = <String, void Function(Uint8List, Uint8List)>{
     _wasmLoadResponseStreamController.add(rustSignal);
     WasmLoadResponse.latestRustSignal = rustSignal;
   },
+  'WasmNetRequest': (Uint8List messageBytes, Uint8List binary) {
+    final message = WasmNetRequest.bincodeDeserialize(messageBytes);
+    final rustSignal = RustSignalPack(
+      message,
+      binary,
+    );
+    _wasmNetRequestStreamController.add(rustSignal);
+    WasmNetRequest.latestRustSignal = rustSignal;
+  },
   'WasmRunResponse': (Uint8List messageBytes, Uint8List binary) {
     final message = WasmRunResponse.bincodeDeserialize(messageBytes);
     final rustSignal = RustSignalPack(

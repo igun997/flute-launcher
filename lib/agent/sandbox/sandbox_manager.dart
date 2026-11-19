@@ -29,8 +29,9 @@ class SandboxManager extends ChangeNotifier {
        _ownsClient = httpClient == null {
     _local = LocalWasmProvider(
       directory: _runtimeDirectory,
-      runtime: const RustWasmRuntime(),
+      runtime: RustWasmRuntime(),
       client: _client,
+      allowNetwork: () => _settings.localNetwork,
     );
     if (watchAppLifecycle) {
       _lifecycle = AppLifecycleListener(onPause: () => unawaited(shutdown()));
@@ -100,6 +101,14 @@ class SandboxManager extends ChangeNotifier {
 
   Future<void> setPreferred(String? id) async {
     await _settings.setPreferred(id);
+    _notify();
+  }
+
+  /// Whether local Python may fetch public web addresses.
+  bool get localNetwork => _settings.localNetwork;
+
+  Future<void> setLocalNetwork(bool allowed) async {
+    await _settings.setLocalNetwork(allowed);
     _notify();
   }
 

@@ -15,6 +15,7 @@ class SandboxSettings {
 
   static const _preferredKey = 'sandbox.preferred';
   static const _keepWarmKey = 'sandbox.keepWarmMinutes';
+  static const _localNetworkKey = 'sandbox.localNetwork';
 
   final SharedPreferences _prefs;
   final SecretStore _secrets;
@@ -36,6 +37,11 @@ class SandboxSettings {
     _keepWarmKey,
     math.min(math.max(minutes, 0), maxKeepWarmMinutes),
   );
+
+  /// Whether local Python may fetch public web addresses. On unless the user turns it off.
+  bool get localNetwork => _prefs.getBool(_localNetworkKey) ?? true;
+
+  Future<void> setLocalNetwork(bool allowed) => _prefs.setBool(_localNetworkKey, allowed);
 
   String? apiUrl(String providerId) => _prefs.getString('sandbox.$providerId.apiUrl');
 
