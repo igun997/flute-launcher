@@ -18,6 +18,12 @@ Flute is a calm, text-first Android home screen that **understands your apps** a
 
 > Flutter UI with a small Kotlin layer. Android 7.0+ (API 24). English only. No account, no ads, no analytics.
 
+### Promo video
+
+[![Flute promo video: not only focus, boost your productivity](docs/screenshots/pv-preview.gif)](https://github.com/igun997/flute-launcher/releases/download/v0.2.0/flute-promo.mp4)
+
+42 seconds, 9:16, cut to a 120 BPM beat. [Watch the full video with sound](https://github.com/igun997/flute-launcher/releases/download/v0.2.0/flute-promo.mp4) (it is a release asset). The voice is Gemini TTS, the music is synthesized for the project, the pictures are generated, and every phone screen in it is a real screenshot. The brief is in [docs/BRAND.md](docs/BRAND.md).
+
 ## Download
 
 | Channel | What it is | Get it |
@@ -37,8 +43,8 @@ Both are **release builds signed with the same Flute key**, so they update over 
 Verify the download (optional, recommended). Every release ships a `.sha256` file, and the signing certificate fingerprint is printed in the release notes.
 
 ```bash
-sha256sum -c flute-0.1.0-arm64-v8a.apk.sha256
-apksigner verify --print-certs flute-0.1.0-arm64-v8a.apk
+sha256sum -c flute-0.2.0-arm64-v8a.apk.sha256
+apksigner verify --print-certs flute-0.2.0-arm64-v8a.apk
 ```
 
 The official signing certificate has this SHA-256 fingerprint:
@@ -101,6 +107,14 @@ Swipe left on Home for **Inbox**: WhatsApp and SMS notifications (captured from 
 ### Ask Flute: an assistant on the left of Home
 
 Swipe right from Home. Chat with any model: Markdown answers (tables included), attachments (photo, camera, video, files), and a live **tokens per second** readout while it writes.
+
+<p>
+  <img src="docs/screenshots/ask-home.jpg" width="19%" alt="Ask Flute home">
+  <img src="docs/screenshots/ask-confirm.jpg" width="19%" alt="It asks before it changes anything">
+  <img src="docs/screenshots/ask-image.jpg" width="19%" alt="A generated picture in the chat">
+  <img src="docs/screenshots/ask-sandbox.jpg" width="19%" alt="A chart drawn by Python on the phone">
+  <img src="docs/screenshots/ask-voice.jpg" width="19%" alt="Voice mode">
+</p>
 
 - **Bring your own model:** any OpenAI-compatible gateway (the model list is pulled automatically and searchable), **Sign in with ChatGPT** (uses your ChatGPT plan, through OpenAI's official flow for open-source apps) or **OpenRouter** (OAuth). Claude's own subscription login is not offered: Anthropic does not allow it in third-party apps. Use an API key via a gateway or OpenRouter.
 - **It runs your launcher:** switch mode (Free, Work, Focus, Sleep, with a timer), manage schedules, pins, app categories and a few settings. Changes ask first.
@@ -206,9 +220,9 @@ The repository is built by GitHub Actions. To get signed nightly and release APK
 3. **Nightly:** push to `main`. The *Nightly* workflow analyzes, tests, builds, signs and replaces the `nightly` pre-release.
 4. **Release:** tag a commit and push the tag.
    ```bash
-   git tag v0.2.0 && git push origin v0.2.0
+   git tag v0.3.0 && git push origin v0.3.0
    ```
-   The *Release* workflow builds from the tag (`v0.2.0` becomes version name `0.2.0`) and publishes a release with the APK and its checksum. Tags with a dash (`v0.2.0-rc1`) are marked pre-release.
+   The *Release* workflow builds from the tag (`v0.3.0` becomes version name `0.3.0`) and publishes a release with the APK and its checksum. Tags with a dash (`v0.3.0-rc1`) are marked pre-release.
 
 Without the secrets, the workflows still run and produce debug-signed APKs. Secrets are only given to workflows that run on your own branches and tags; pull requests from forks use the plain *CI* workflow (analyze + test) and never see them.
 

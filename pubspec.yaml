@@ -1,7 +1,7 @@
 name: focus_launcher
 description: Flute, a lightweight launcher that boosts your productivity (not only focus).
 publish_to: none
-version: 0.1.0+1
+version: 0.2.0+1
 environment:
   sdk: ^3.13.0
 dependencies:
