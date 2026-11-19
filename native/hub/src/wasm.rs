@@ -3,13 +3,16 @@
 //! own in-memory stdio, so nothing carries over between runs.
 
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Instant;
 
 use rinf::{DartSignal, DartSignalBinary, RustSignal};
 use tokio::spawn;
 use tokio::task::spawn_blocking;
-use wasmi::{Config, Engine, Linker, Module, ResourceLimiter, Store, StoreLimits, StoreLimitsBuilder};
+use wasmi::{
+  Config, Engine, Linker, Module, ResourceLimiter, Store, StoreLimits, StoreLimitsBuilder, TrapCode,
+};
 use wasmi_wasi::WasiCtx;
 use wasmi_wasi::sync::{WasiCtxBuilder, add_to_linker};
 use wasmi_wasi::wasi_common::pipe::{ReadPipe, WritePipe};
@@ -20,8 +23,15 @@ use crate::signals::{WasmLoadRequest, WasmLoadResponse, WasmRunRequest, WasmRunR
 const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 const MAX_TIMEOUT_MS: u32 = 300_000;
 const MAX_MEMORY_MB: u32 = 512;
-/// Rough fuel budget per millisecond. Fuel counts wasm instructions, so this is only approximate.
-const FUEL_PER_MS: u64 = 50_000;
+/// Fuel per millisecond until the device is measured. Fuel is not a unit of time (CPython needs
+/// billions of units to start, in under a second on a laptop), so `load` measures it on this device.
+const DEFAULT_FUEL_PER_MS: u64 = 1_000_000;
+/// The measuring run may use this much fuel before it is cut off.
+const CALIBRATION_FUEL: u64 = 100_000_000_000;
+/// Measured rates outside this range are not believed.
+const FUEL_PER_MS_RANGE: (u64, u64) = (50_000, 100_000_000);
+
+static FUEL_PER_MS: AtomicU64 = AtomicU64::new(DEFAULT_FUEL_PER_MS);
 
 static ENGINE: LazyLock<Engine> = LazyLock::new(|| {
   let mut config = Config::default();
@@ -51,6 +61,7 @@ async fn load() {
       let error = match Module::new(&ENGINE, bytes) {
         Ok(module) => {
           *lock(&MODULE) = Some(module);
+          calibrate();
           String::new()
         }
         Err(err) => {
@@ -102,7 +113,42 @@ impl Write for Capture {
   }
 }
 
+/// A small loop of ordinary work. Fuel per millisecond differs by workload (starting the
+/// interpreter is about half as fuel-hungry per millisecond as a compute loop), so measuring a
+/// loop keeps the limit on the safe, early side for real scripts.
+const CALIBRATION_PROGRAM: &str = "x = 0\nfor i in range(10000): x += i * i";
+
+/// Runs a short Python program to learn how much fuel one millisecond is on this device.
+fn calibrate() {
+  let request = WasmRunRequest {
+    id: 0,
+    argv: vec!["python".to_owned(), "-c".to_owned(), CALIBRATION_PROGRAM.to_owned()],
+    env: Vec::new(),
+    stdin: String::new(),
+    timeout_ms: MAX_TIMEOUT_MS,
+    max_memory_mb: MAX_MEMORY_MB,
+  };
+  let mut used = 0;
+  let started = Instant::now();
+  let response = run_with(&request, CALIBRATION_FUEL, &mut used);
+  let elapsed_ms = started.elapsed().as_millis();
+  if !response.error.is_empty() || response.exit_code != 0 || elapsed_ms == 0 {
+    return;
+  }
+  let rate = u64::try_from(u128::from(used) / elapsed_ms).unwrap_or(u64::MAX);
+  if (FUEL_PER_MS_RANGE.0..=FUEL_PER_MS_RANGE.1).contains(&rate) {
+    FUEL_PER_MS.store(rate, Ordering::Relaxed);
+  }
+}
+
 fn run_module(request: &WasmRunRequest) -> WasmRunResponse {
+  let timeout_ms = request.timeout_ms.clamp(1, MAX_TIMEOUT_MS);
+  let fuel = u64::from(timeout_ms).saturating_mul(FUEL_PER_MS.load(Ordering::Relaxed));
+  run_with(request, fuel, &mut 0)
+}
+
+/// One run with `fuel` units to spend. `used` receives the fuel the guest consumed.
+fn run_with(request: &WasmRunRequest, fuel: u64, used: &mut u64) -> WasmRunResponse {
   let id = request.id;
   let failed = |error: String| WasmRunResponse {
     id,
@@ -147,7 +193,7 @@ fn run_module(request: &WasmRunRequest) -> WasmRunResponse {
     .build();
   let mut store = Store::new(&ENGINE, RunState { wasi, limits });
   store.limiter(|state: &mut RunState| -> &mut dyn ResourceLimiter { &mut state.limits });
-  if let Err(err) = store.set_fuel(u64::from(timeout_ms) * FUEL_PER_MS) {
+  if let Err(err) = store.set_fuel(fuel) {
     return failed(err.to_string());
   }
 
@@ -170,12 +216,13 @@ fn run_module(request: &WasmRunRequest) -> WasmRunResponse {
     Ok(()) => (0, String::new()),
     Err(err) => match err.i32_exit_status() {
       Some(code) => (code, String::new()),
-      None if store.get_fuel().is_ok_and(|fuel| fuel == 0) => {
+      None if err.as_trap_code() == Some(TrapCode::OutOfFuel) => {
         (-1, format!("time limit exceeded after {timeout_ms} ms"))
       }
       None => (-1, err.to_string()),
     },
   };
+  *used = fuel.saturating_sub(store.get_fuel().unwrap_or(0));
 
   WasmRunResponse {
     id,
@@ -190,29 +237,56 @@ fn run_module(request: &WasmRunRequest) -> WasmRunResponse {
 mod tests {
   use super::*;
 
-  /// Runs only when `FLUTE_PYTHON_WASM` points at the pinned python-3.12.0.wasm.
-  #[test]
-  fn python_prints_arithmetic() -> Result<(), String> {
+  /// Loads the pinned python-3.12.0.wasm named by `FLUTE_PYTHON_WASM`. None skips the test.
+  fn load_python() -> Result<Option<()>, String> {
     let Ok(path) = std::env::var("FLUTE_PYTHON_WASM") else {
-      return Ok(());
+      return Ok(None);
     };
     let bytes = std::fs::read(&path).map_err(|err| err.to_string())?;
     let module = Module::new(&ENGINE, bytes).map_err(|err| err.to_string())?;
     *lock(&MODULE) = Some(module);
+    calibrate();
+    Ok(Some(()))
+  }
 
-    let response = run_module(&WasmRunRequest {
+  fn python(code: &str, timeout_ms: u32) -> WasmRunResponse {
+    run_module(&WasmRunRequest {
       id: 1,
-      argv: vec!["python".to_owned(), "-c".to_owned(), "print(1+1)".to_owned()],
+      argv: vec!["python".to_owned(), "-c".to_owned(), code.to_owned()],
       env: Vec::new(),
       stdin: String::new(),
-      timeout_ms: MAX_TIMEOUT_MS,
+      timeout_ms,
       max_memory_mb: MAX_MEMORY_MB,
-    });
+    })
+  }
+
+  #[test]
+  fn python_prints_arithmetic() -> Result<(), String> {
+    if load_python()?.is_none() {
+      return Ok(());
+    }
+    let response = python("print(1+1)", 30_000);
     if !response.error.is_empty() {
       return Err(response.error);
     }
     assert_eq!(response.exit_code, 0);
     assert_eq!(response.stdout, "2\n");
+    Ok(())
+  }
+
+  #[test]
+  fn a_runaway_loop_stops_near_the_time_limit() -> Result<(), String> {
+    if load_python()?.is_none() {
+      return Ok(());
+    }
+    let started = Instant::now();
+    let response = python("while True: pass", 3_000);
+    let took = started.elapsed();
+    assert_eq!(response.exit_code, -1);
+    assert!(response.error.contains("time limit exceeded"), "{}", response.error);
+    // The limit is measured in work, not seconds: a bare `while True: pass` burns fuel several
+    // times faster per millisecond than the calibration loop, so it stops early, never late.
+    assert!(took.as_millis() > 200 && took.as_millis() < 12_000, "took {took:?}");
     Ok(())
   }
 }

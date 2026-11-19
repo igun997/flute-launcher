@@ -66,6 +66,12 @@ Rust is used where it is the right tool: hashing and unzip (13x and 4x), categor
 for the sandbox, a WASI interpreter (`wasmi`) that runs Python on the phone with a fuel limit, a memory cap
 and no network.
 
+The local Python time limit is fuel, not seconds: wasmi has no timer interrupt, and CPython needs 3 to 6
+billion fuel units just to start (0.6 s on a laptop). When the module loads, one short compute loop is run
+to measure fuel per millisecond on that device, and the limit is `timeout x measured rate`. A bare
+`while True: pass` burns fuel about 6x faster per millisecond than that loop, so it stops early (0.5 s of a 3 s
+limit in the test), never late.
+
 ## Costs
 
 - APK (arm64): about +4 MB for the Rust library with the WASM runtime (34.7 MB before the Rust core, 39.9 MB now, which also includes the voice, routines and sandbox code).
