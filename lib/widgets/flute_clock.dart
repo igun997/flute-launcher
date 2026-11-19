@@ -88,7 +88,9 @@ class _FluteClockState extends State<FluteClock> {
         '${_months[_now.month - 1]} ${_now.day}';
 
     final ink = SkyInk.of(context);
+    // The big clock stays thin on purpose; Inter has no light weights, so it keeps the system font.
     final digitStyle = TextStyle(
+      fontFamily: 'Roboto',
       fontSize: 112,
       height: 1.0,
       fontWeight: FontWeight.w200,
