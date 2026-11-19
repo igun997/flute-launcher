@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:material_ui/material_ui.dart';
 
 import '../../app/flute.dart';
@@ -80,6 +81,7 @@ class _SkillsSectionState extends State<SkillsSection> {
   Future<void> _install() => _run('Installing...', _ownerOffers, () async {
         final added = await widget.flute.skills.add(_offersFrom, names: _picked.toList());
         if (!mounted) return;
+        HapticFeedback.lightImpact();
         setState(() {
           _offers = null;
           _picked.clear();
@@ -129,103 +131,153 @@ class _SkillsSectionState extends State<SkillsSection> {
     final owner = _owner;
     final working = busy != null;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: settingsSpaced([
         ListenableBuilder(
           listenable: skills,
           builder: (context, _) {
             final installed = skills.installed;
-            if (installed.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'No skills installed. A skill is a set of instructions the agent loads when it needs them.',
-                  style: settingsMuted,
-                ),
-              );
-            }
-            return Column(
+            return SettingsSection(
+              title: 'Installed',
               children: [
-                for (final skill in installed)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(skill.name),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(skill.description, style: settingsMuted, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        Text(
-                          skill.ref == null ? skill.source : '${skill.source}@${skill.ref}',
-                          style: const TextStyle(color: FluteColors.muted, fontSize: 11),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                if (installed.isEmpty)
+                  Text(
+                    'None yet. A skill is a set of instructions the agent loads when it needs them.',
+                    style: FluteText.caption,
+                  )
+                else
+                  SettingsGroup(
+                    children: [
+                      for (final skill in installed)
+                        SettingsRow(
+                          leading: const SettingsIconTile(icon: Icons.extension_outlined),
+                          title: skill.name,
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                skill.description,
+                                style: FluteText.caption,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: FluteSpace.xs),
+                              Text(
+                                skill.ref == null ? skill.source : '${skill.source}@${skill.ref}',
+                                style: FluteText.caption.copyWith(color: FluteColors.faint),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                          trailing: IconButton(
+                            tooltip: 'Remove ${skill.name}',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: working ? null : () => _remove(skill),
+                          ),
                         ),
-                      ],
-                    ),
-                    trailing: IconButton(
-                      tooltip: 'Remove',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: working ? null : () => _remove(skill),
-                    ),
+                    ],
                   ),
+                if (busy != null && owner == _ownerRemove) ProgressLine(busy),
+                if (_error != null && owner == _ownerRemove) ErrorLine(_error!),
               ],
             );
           },
         ),
-        if (busy != null && owner == _ownerRemove) ProgressLine(busy),
-        if (_error != null && owner == _ownerRemove) ErrorLine(_error!),
-        const SizedBox(height: 12),
-        const Text('Add a skill', style: TextStyle(fontSize: 14)),
-        const SizedBox(height: 8),
-        Row(
+        SettingsSection(
+          title: 'Add a skill',
+          footer: 'You can also type `skills add owner/repo` in the chat.',
           children: [
-            Expanded(
-              child: TextField(
-                controller: _source,
-                enabled: !working,
-                autocorrect: false,
-                enableSuggestions: false,
-                textInputAction: TextInputAction.search,
-                onSubmitted: (_) => _find(),
-                decoration: const InputDecoration(
-                  labelText: 'Skill source',
-                  hintText: 'owner/repo or a GitHub link',
-                  isDense: true,
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _source,
+                    enabled: !working,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _find(),
+                    decoration: const InputDecoration(
+                      labelText: 'Skill source',
+                      hintText: 'owner/repo or a GitHub link',
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: FluteSpace.sm),
+                OutlinedButton(onPressed: working ? null : _find, child: const Text('Find')),
+              ],
             ),
-            const SizedBox(width: 8),
-            FilledButton(onPressed: working ? null : _find, child: const Text('Find')),
+            if (busy != null && owner == _ownerFind) ProgressLine(busy),
+            if (_error != null && owner == _ownerFind) ErrorLine(_error!),
+            if (offers != null) _offersView(offers, working, busy, owner),
           ],
         ),
-        if (busy != null && owner == _ownerFind) ProgressLine(busy),
-        if (_error != null && owner == _ownerFind) ErrorLine(_error!),
-        if (offers != null) ...[
-          const SizedBox(height: 8),
-          if (offers.isNotEmpty) ...[
-            Text('Found in $_offersFrom', style: settingsMuted),
-            for (final offer in offers)
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                dense: true,
-                value: _picked.contains(offer.name),
-                title: Text(offer.name),
-                subtitle: Text(offer.description, style: settingsMuted, maxLines: 2, overflow: TextOverflow.ellipsis),
-                onChanged: working
-                    ? null
-                    : (v) {
-                        setState(() {
-                          if (v == true) {
-                            _picked.add(offer.name);
-                          } else {
-                            _picked.remove(offer.name);
-                          }
-                        });
-                      },
-              ),
+        SettingsSection(
+          title: 'Updates',
+          children: [
+            Wrap(
+              spacing: FluteSpace.sm,
+              runSpacing: FluteSpace.sm,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                TextButton(onPressed: working ? null : _check, child: const Text('Check for updates')),
+                if (updates != null && updates.isNotEmpty)
+                  OutlinedButton(
+                    onPressed: working ? null : () => _update(updates),
+                    child: Text('Update ${updates.length}'),
+                  ),
+              ],
+            ),
+            if (busy != null && owner == _ownerUpdates) ProgressLine(busy),
+            if (_error != null && owner == _ownerUpdates) ErrorLine(_error!),
           ],
+        ),
+        if (_notice != null)
+          Text(_notice!, style: FluteText.caption.copyWith(color: FluteColors.softText)),
+      ]),
+    );
+  }
+
+  /// The skills a source offers, with a checkbox each, and the install and close actions.
+  Widget _offersView(List<SkillOffer> offers, bool working, String? busy, String? owner) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (offers.isNotEmpty) ...[
+            const SizedBox(height: FluteSpace.xs),
+            Text('Found in $_offersFrom', style: FluteText.caption),
+            const SizedBox(height: FluteSpace.sm),
+            SettingsGroup(
+              children: [
+                for (final offer in offers)
+                  CheckboxListTile(
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: FluteSpace.lg),
+                    value: _picked.contains(offer.name),
+                    title: Text(offer.name, style: FluteText.label.copyWith(color: FluteColors.text)),
+                    subtitle: Text(
+                      offer.description,
+                      style: FluteText.caption,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onChanged: working
+                        ? null
+                        : (v) {
+                            setState(() {
+                              if (v == true) {
+                                _picked.add(offer.name);
+                              } else {
+                                _picked.remove(offer.name);
+                              }
+                            });
+                          },
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: FluteSpace.sm),
           Row(
             children: [
               TextButton(
@@ -243,31 +295,5 @@ class _SkillsSectionState extends State<SkillsSection> {
           if (busy != null && owner == _ownerOffers) ProgressLine(busy),
           if (_error != null && owner == _ownerOffers) ErrorLine(_error!),
         ],
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            TextButton(onPressed: working ? null : _check, child: const Text('Check for updates')),
-            if (updates != null && updates.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: working ? null : () => _update(updates),
-                child: Text('Update ${updates.length}'),
-              ),
-            ],
-          ],
-        ),
-        if (busy != null && owner == _ownerUpdates) ProgressLine(busy),
-        if (_error != null && owner == _ownerUpdates) ErrorLine(_error!),
-        if (_notice != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(_notice!, style: const TextStyle(color: FluteColors.accent, fontSize: 13)),
-          ),
-        const Text(
-          'You can also type `skills add owner/repo` in the chat.',
-          style: settingsMuted,
-        ),
-      ],
-    );
-  }
+      );
 }

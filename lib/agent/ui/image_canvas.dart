@@ -114,7 +114,7 @@ class _CreatingImageState extends State<CreatingImage> with SingleTickerProvider
         child: AspectRatio(
           aspectRatio: 1,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: FluteRadius.lgAll,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -126,15 +126,23 @@ class _CreatingImageState extends State<CreatingImage> with SingleTickerProvider
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: Padding(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(FluteSpace.lg),
                     child: Text(
                       'Creating image · ${_seconds}s',
                       style: const TextStyle(
-                        color: Color(0xE6FFFFFF),
+                        color: FluteColors.text,
                         fontSize: 13,
                         letterSpacing: 0.3,
                         fontFeatures: [ui.FontFeature.tabularFigures()],
                       ),
+                    ),
+                  ),
+                ),
+                IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: FluteRadius.lgAll,
+                      border: Border.all(color: FluteColors.line),
                     ),
                   ),
                 ),
@@ -163,7 +171,7 @@ class _CanvasPainter extends CustomPainter {
       paint.shader = ui.Gradient.linear(
         Offset.zero,
         size.bottomRight(Offset.zero),
-        [const Color(0xFF0B1020), Color.lerp(const Color(0xFF283377), color, clock.value) ?? color],
+        [FluteColors.bg, Color.lerp(FluteColors.surfaceTop, color, clock.value) ?? color],
       );
       canvas.drawRect(Offset.zero & size, paint);
       return;
@@ -209,29 +217,36 @@ class GeneratedImage extends StatelessWidget {
         onLongPressStart: (details) => unawaited(showPictureMenu(context, details.globalPosition, file)),
         child: Hero(
           tag: file.path,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Image.file(
-              File(file.path),
-              width: double.infinity,
-              fit: BoxFit.fitWidth,
-              cacheWidth: 1080,
-              excludeFromSemantics: true,
-              frameBuilder: (context, child, frame, sync) {
-                if (sync) return child;
-                return AnimatedOpacity(
-                  opacity: frame == null ? 0 : 1,
-                  duration: motion(context, 420),
-                  curve: Curves.easeOut,
-                  child: AnimatedScale(
-                    scale: frame == null ? 0.97 : 1,
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              borderRadius: FluteRadius.lgAll,
+              border: Border.all(color: FluteColors.line),
+            ),
+            child: ClipRRect(
+              borderRadius: FluteRadius.lgAll,
+              child: Image.file(
+                File(file.path),
+                width: double.infinity,
+                fit: BoxFit.fitWidth,
+                cacheWidth: 1080,
+                excludeFromSemantics: true,
+                frameBuilder: (context, child, frame, sync) {
+                  if (sync) return child;
+                  return AnimatedOpacity(
+                    opacity: frame == null ? 0 : 1,
                     duration: motion(context, 420),
-                    curve: Curves.easeOutCubic,
-                    child: child,
-                  ),
-                );
-              },
-              errorBuilder: (_, _, _) => const _MissingImage(),
+                    curve: Curves.easeOut,
+                    child: AnimatedScale(
+                      scale: frame == null ? 0.97 : 1,
+                      duration: motion(context, 420),
+                      curve: Curves.easeOutCubic,
+                      child: child,
+                    ),
+                  );
+                },
+                errorBuilder: (_, _, _) => const _MissingImage(),
+              ),
             ),
           ),
         ),
@@ -251,7 +266,7 @@ class _MissingImage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
           color: FluteColors.surfaceHigh,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: FluteRadius.lgAll,
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
@@ -297,18 +312,18 @@ class _FullImage extends StatelessWidget {
                 children: [
                   IconButton(
                     tooltip: 'Close',
-                    icon: const Icon(Icons.close, color: Colors.white),
+                    icon: const Icon(Icons.close, color: FluteColors.text),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   const Spacer(),
                   IconButton(
                     tooltip: 'Save to Downloads',
-                    icon: const Icon(Icons.download_outlined, color: Colors.white),
+                    icon: const Icon(Icons.download_outlined, color: FluteColors.text),
                     onPressed: () => unawaited(saveToolFile(ScaffoldMessenger.of(context), file)),
                   ),
                   IconButton(
                     tooltip: 'Share',
-                    icon: const Icon(Icons.share_outlined, color: Colors.white),
+                    icon: const Icon(Icons.share_outlined, color: FluteColors.text),
                     onPressed: () => unawaited(shareToolFile(ScaffoldMessenger.of(context), file)),
                   ),
                 ],

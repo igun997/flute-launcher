@@ -89,7 +89,7 @@ void main() {
     expect(find.byKey(const ValueKey('dots-2026-11-16')), findsNothing);
   });
 
-  testWidgets('device calendar events show as a grey dot only when they are passed in', (tester) async {
+  testWidgets('device calendar events show as a faint dot only when they are passed in', (tester) async {
     await pumpCalendar(
       tester,
       deviceEvents: [
@@ -150,11 +150,6 @@ void main() {
     expect(taps.months.last, DateTime(2026, 11));
   });
 
-  test('the same routine always gets the same colour', () {
-    expect(routineColor('morning'), routineColor('morning'));
-    expect(routineColorIsOneOfPalette(routineColor('morning')), isTrue);
-  });
-
   test('run stats read as tokens in, tokens out and speed, with an estimate mark', () {
     expect(routineRunStats(_pastRun), '1 200 in · 340 out · 41 tok/s');
     final estimated = RoutineRun(
@@ -170,12 +165,3 @@ void main() {
     expect(routineRunStats(estimated), '~12 out · ~6.4 tok/s');
   });
 }
-
-bool routineColorIsOneOfPalette(Color color) => const [
-      Color(0xFF5EEAD4),
-      Color(0xFFF5B86B),
-      Color(0xFF9AA8FF),
-      Color(0xFFF28BB0),
-      Color(0xFF9BE37A),
-      Color(0xFFC9A6FF),
-    ].contains(color);

@@ -127,9 +127,7 @@ class _ModelPickerState extends State<_ModelPicker> {
       child: SizedBox(
         height: max(280.0, size.height * 0.8 - keyboard),
         child: profile == null
-            ? const Center(
-                child: Text('Add a provider first.', style: TextStyle(color: FluteColors.muted)),
-              )
+            ? Center(child: Text('Add a provider first.', style: FluteText.body.copyWith(color: FluteColors.muted)))
             : _body(profile),
       ),
     );
@@ -144,31 +142,30 @@ class _ModelPickerState extends State<_ModelPicker> {
         : query.isEmpty
             ? _countLabel(total)
             : '${shown.length} of ${_countLabel(total)}';
+    final caption = [profile.label, if (count.isNotEmpty) count].join(' · ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(FluteSpace.xl, FluteSpace.sm, FluteSpace.xl, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(child: Text('Choose a model', style: TextStyle(fontSize: 18))),
-              Text(count, style: const TextStyle(color: FluteColors.muted, fontSize: 13)),
+              Text('Choose a model', style: FluteText.title),
+              const SizedBox(height: FluteSpace.xs),
+              Text(caption, style: FluteText.caption, maxLines: 1, overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+          padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.lg, FluteSpace.lg, FluteSpace.sm),
           child: TextField(
             controller: _search,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               hintText: 'Search by name or id',
-              hintStyle: const TextStyle(color: FluteColors.muted),
               prefixIcon: const Icon(Icons.search, size: 20, color: FluteColors.muted),
               isDense: true,
-              border: _fieldBorder(FluteColors.line),
-              enabledBorder: _fieldBorder(FluteColors.line),
-              focusedBorder: _fieldBorder(FluteColors.accent),
             ),
           ),
         ),
@@ -184,11 +181,11 @@ class _ModelPickerState extends State<_ModelPicker> {
               if (_refreshing || _selecting) const LinearProgressIndicator(minHeight: 2),
               if (_error != null)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 12, 4),
+                  padding: const EdgeInsets.fromLTRB(FluteSpace.xl, FluteSpace.xs, FluteSpace.md, FluteSpace.xs),
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(_error!, style: const TextStyle(color: settingsAlert, fontSize: 13)),
+                        child: Text(_error!, style: FluteText.caption.copyWith(color: FluteColors.danger)),
                       ),
                       if (!_refreshing) TextButton(onPressed: _retry, child: const Text('Retry')),
                     ],
@@ -202,18 +199,13 @@ class _ModelPickerState extends State<_ModelPicker> {
     );
   }
 
-  static OutlineInputBorder _fieldBorder(Color color) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: color),
-      );
-
   Widget _list(List<ModelInfo> shown, ProviderProfile profile) {
     if (_models.isEmpty) {
       if (_refreshing) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
       return Center(
         child: Text(
           _error == null ? 'This provider lists no models.' : 'No models loaded yet.',
-          style: const TextStyle(color: FluteColors.muted),
+          style: FluteText.body.copyWith(color: FluteColors.muted),
         ),
       );
     }
@@ -221,13 +213,13 @@ class _ModelPickerState extends State<_ModelPicker> {
       return Center(
         child: Text(
           'No model matches "${_search.text.trim()}".',
-          style: const TextStyle(color: FluteColors.muted),
+          style: FluteText.body.copyWith(color: FluteColors.muted),
         ),
       );
     }
     return ListView.builder(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.fromLTRB(FluteSpace.sm, 0, FluteSpace.sm, FluteSpace.lg),
       itemCount: shown.length,
       itemBuilder: (_, i) {
         final model = shown[i];
@@ -250,6 +242,7 @@ String _contextLabel(int tokens) {
   return '$tokens';
 }
 
+/// A model: name in label, id in caption. The selected one takes the accent-soft fill and a check.
 class _ModelRow extends StatelessWidget {
   const _ModelRow({required this.model, required this.selected, required this.enabled, required this.onTap});
   final ModelInfo model;
@@ -259,35 +252,62 @@ class _ModelRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      enabled: enabled,
+    return Semantics(
+      button: true,
       selected: selected,
-      selectedColor: FluteColors.accent,
-      onTap: enabled ? onTap : null,
-      title: Text(model.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(model.id, maxLines: 1, overflow: TextOverflow.ellipsis, style: settingsMuted),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (model.contextLength != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Text(_contextLabel(model.contextLength!), style: settingsMuted),
+      enabled: enabled,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: FluteRadius.mdAll,
+          onTap: enabled ? onTap : null,
+          child: AnimatedContainer(
+            duration: motion(context, 180),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.fromLTRB(FluteSpace.md, FluteSpace.md, FluteSpace.md, FluteSpace.md),
+            decoration: BoxDecoration(
+              color: selected ? FluteColors.accentSoft : Colors.transparent,
+              borderRadius: FluteRadius.mdAll,
             ),
-          if (model.acceptsImages == true)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: Tooltip(
-                message: 'Accepts images',
-                child: Icon(Icons.image_outlined, size: 16, color: FluteColors.muted),
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(model.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: FluteText.label),
+                      const SizedBox(height: 2),
+                      Text(model.id, maxLines: 1, overflow: TextOverflow.ellipsis, style: FluteText.caption),
+                    ],
+                  ),
+                ),
+                if (model.contextLength != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: FluteSpace.sm),
+                    child: Text(_contextLabel(model.contextLength!), style: FluteText.caption),
+                  ),
+                if (model.acceptsImages == true)
+                  const Padding(
+                    padding: EdgeInsets.only(left: FluteSpace.sm),
+                    child: Tooltip(
+                      message: 'Accepts images',
+                      child: Icon(Icons.image_outlined, size: 16, color: FluteColors.muted),
+                    ),
+                  ),
+                SizedBox(
+                  width: 28,
+                  child: selected
+                      ? const Align(
+                          alignment: Alignment.centerRight,
+                          child: Icon(Icons.check_rounded, size: 20, color: FluteColors.accent),
+                        )
+                      : null,
+                ),
+              ],
             ),
-          if (selected)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: Icon(Icons.check, size: 20, color: FluteColors.accent),
-            ),
-        ],
+          ),
+        ),
       ),
     );
   }

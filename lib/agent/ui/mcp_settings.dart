@@ -21,8 +21,8 @@ const _authLabels = {
 Color _statusColor(McpStatus status) => switch (status) {
       McpStatus.connected => FluteColors.accent,
       McpStatus.connecting => FluteColors.warn,
-      McpStatus.failed => settingsAlert,
-      McpStatus.disconnected => FluteColors.muted,
+      McpStatus.failed => FluteColors.danger,
+      McpStatus.disconnected => FluteColors.faint,
       McpStatus.needsSignIn => FluteColors.warn,
     };
 
@@ -46,19 +46,8 @@ McpServerConfig? _findServer(McpManager mcp, String id) {
   return null;
 }
 
-class _Dot extends StatelessWidget {
-  const _Dot(this.color);
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      );
-}
-
-/// The MCP block of Agent settings: every server with its status, enable switch and detail page.
+/// The MCP block of Agent settings: every server with its status, tool count, enable switch and
+/// detail page.
 class McpServersSection extends StatefulWidget {
   const McpServersSection({super.key, required this.flute});
   final Flute flute;
@@ -106,52 +95,61 @@ class _McpServersSectionState extends State<McpServersSection> {
       builder: (context, _) {
         final servers = _mcp.servers;
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: settingsSpaced([
             if (servers.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'No servers yet. Add GitHub, Jira or your own MCP server to give the agent more tools.',
-                  style: settingsMuted,
-                ),
+              Text(
+                'No servers yet. Add GitHub, Jira or your own MCP server to give the agent more tools.',
+                style: FluteText.caption,
               ),
-            for (final server in servers)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: _Dot(_statusColor(_mcp.statusOf(server.id))),
-                title: Text(server.name),
-                subtitle: Text(
-                  _statusText(_mcp, server),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: _mcp.statusOf(server.id) == McpStatus.failed ? settingsAlert : FluteColors.muted,
-                    fontSize: 12,
+            if (servers.isNotEmpty)
+              SettingsSection(
+                title: 'Servers',
+                children: [
+                  SettingsGroup(
+                    children: [
+                      for (final server in servers)
+                        SettingsRow(
+                          leading: SizedBox(
+                            width: 20,
+                            child: Center(child: StatusDot(_statusColor(_mcp.statusOf(server.id)))),
+                          ),
+                          title: server.name,
+                          subtitle: Text(
+                            _statusText(_mcp, server),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _mcp.statusOf(server.id) == McpStatus.failed
+                                ? FluteText.caption.copyWith(color: FluteColors.danger)
+                                : FluteText.caption,
+                          ),
+                          trailing: _toggling.contains(server.id)
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : Switch(
+                                  value: server.enabled,
+                                  onChanged: (v) => _setEnabled(server, v),
+                                ),
+                          chevron: true,
+                          onTap: () => _open(server),
+                        ),
+                    ],
                   ),
-                ),
-                trailing: _toggling.contains(server.id)
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Switch(
-                        value: server.enabled,
-                        onChanged: (v) => _setEnabled(server, v),
-                      ),
-                onTap: () => _open(server),
+                ],
               ),
             if (_error != null) ErrorLine(_error!),
-            TextButton(
-              style: TextButton.styleFrom(alignment: Alignment.centerLeft, padding: EdgeInsets.zero),
-              onPressed: _addServer,
-              child: const Text('Add server'),
-            ),
-          ],
+            FilledButton(onPressed: _addServer, child: const Text('Add server')),
+          ]),
         );
       },
     );
   }
 }
 
-/// One server: status, reconnect, enable, edit, remove, and a switch per tool.
+/// One server: status, connect or sign in, enable, edit, remove, and a switch per tool.
 class McpServerPage extends StatefulWidget {
   const McpServerPage({super.key, required this.flute, required this.serverId});
   final Flute flute;
@@ -211,7 +209,7 @@ class _McpServerPageState extends State<McpServerPage> {
           appBar: AppBar(
             backgroundColor: FluteColors.bg,
             scrolledUnderElevation: 0,
-            title: Text(server?.name ?? 'Server', style: const TextStyle(fontWeight: FontWeight.w300)),
+            title: Text(server?.name ?? 'Server'),
             actions: server == null
                 ? null
                 : [
@@ -229,120 +227,159 @@ class _McpServerPageState extends State<McpServerPage> {
           ),
           body: server == null
               ? const Center(
-                  child: Text('This server was removed.', style: TextStyle(color: FluteColors.muted)),
+                  child: Text('This server was removed.', style: FluteText.caption),
                 )
-              : _details(server),
+              : _details(context, server),
         );
       },
     );
   }
 
-  List<Widget> _signInActions(McpServerConfig server, McpStatus status, bool connecting) {
-    if (_mcp.isSigningIn(server.id)) {
+  /// The sign-in and connect actions for a server, in the order the user needs them.
+  List<Widget> _actions(McpServerConfig server, McpStatus status, bool connecting) {
+    final signedIn = status == McpStatus.connected || status == McpStatus.failed;
+    final spinner = connecting
+        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+        : null;
+    if (server.auth == McpAuthKind.oauth && _mcp.isSigningIn(server.id)) {
       return [
-        const Text('Waiting for the browser. Finish signing in there, then come back.', style: settingsMuted),
-        const SizedBox(height: 8),
-        OutlinedButton(
-          onPressed: () => _mcp.cancelSignIn(server.id),
-          child: const Text('Cancel sign-in'),
+        Text(
+          'Waiting for the browser. Finish signing in there, then come back.',
+          style: FluteText.caption,
         ),
-        const SizedBox(height: 12),
+        Wrap(
+          spacing: FluteSpace.sm,
+          runSpacing: FluteSpace.sm,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton(
+              onPressed: () => _mcp.cancelSignIn(server.id),
+              child: const Text('Cancel sign-in'),
+            ),
+          ],
+        ),
       ];
     }
-    final signedIn = status == McpStatus.connected || status == McpStatus.failed;
+    final canConnect = server.auth != McpAuthKind.oauth || status != McpStatus.needsSignIn;
     return [
-      Row(
+      Wrap(
+        spacing: FluteSpace.sm,
+        runSpacing: FluteSpace.sm,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          FilledButton(
-            onPressed: connecting || !server.enabled ? null : () => _run(() => _mcp.signIn(server.id)),
-            child: Text(signedIn ? 'Sign in again' : 'Sign in with browser'),
-          ),
-          if (signedIn) ...[
-            const SizedBox(width: 12),
+          if (server.auth == McpAuthKind.oauth)
+            FilledButton(
+              onPressed: connecting || !server.enabled ? null : () => _run(() => _mcp.signIn(server.id)),
+              child: Text(signedIn ? 'Sign in again' : 'Sign in with browser'),
+            ),
+          if (server.auth == McpAuthKind.oauth && signedIn)
             TextButton(
               onPressed: connecting ? null : () => _run(() => _mcp.signOut(server.id)),
               child: const Text('Sign out'),
             ),
-          ],
+          if (canConnect)
+            OutlinedButton(
+              onPressed: connecting || !server.enabled ? null : () => _run(() => _mcp.connect(server.id)),
+              child: Text(status == McpStatus.connected ? 'Reconnect' : 'Connect'),
+            ),
+          ?spinner,
         ],
       ),
-      const SizedBox(height: 12),
     ];
   }
 
-  Widget _details(McpServerConfig server) {
+  Widget _details(BuildContext context, McpServerConfig server) {
     final status = _mcp.statusOf(server.id);
     final tools = _mcp.toolsOf(server.id);
     final connecting = _working || status == McpStatus.connecting;
     final error = _error ?? (status == McpStatus.failed ? _mcp.errorOf(server.id) : null);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
-      children: [
-        Text(server.url, style: settingsMuted),
-        const SizedBox(height: 16),
-        Row(
+      padding: settingsPagePadding(context),
+      children: settingsSpaced([
+        Text(server.url, style: FluteText.caption, maxLines: 1, overflow: TextOverflow.ellipsis),
+        SettingsSection(
+          title: 'Status',
           children: [
-            _Dot(_statusColor(status)),
-            const SizedBox(width: 8),
-            Expanded(child: Text(_statusText(_mcp, server), style: const TextStyle(fontSize: 15))),
+            SettingsGroup(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(FluteSpace.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          StatusDot(_statusColor(status)),
+                          const SizedBox(width: FluteSpace.sm),
+                          Expanded(
+                            child: Text(
+                              _statusText(_mcp, server),
+                              style: FluteText.label.copyWith(color: FluteColors.text),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: FluteSpace.md),
+                        ErrorLine(error),
+                      ],
+                      const SizedBox(height: FluteSpace.md),
+                      ...settingsSpaced(_actions(server, status, connecting), gap: FluteSpace.sm),
+                    ],
+                  ),
+                ),
+                SettingsSwitchRow(
+                  title: 'Use this server',
+                  subtitle: Text('Off disconnects it and removes its tools.', style: FluteText.caption),
+                  value: server.enabled,
+                  onChanged: connecting ? null : (v) => _run(() => _mcp.setEnabled(server.id, v)),
+                ),
+              ],
+            ),
           ],
         ),
-        const SizedBox(height: 12),
-        if (error != null) ErrorLine(error),
-        if (server.auth == McpAuthKind.oauth) ..._signInActions(server, status, connecting),
-        if (server.auth != McpAuthKind.oauth || status != McpStatus.needsSignIn)
-          Row(
-            children: [
-              OutlinedButton(
-                onPressed: connecting || !server.enabled ? null : () => _run(() => _mcp.connect(server.id)),
-                child: Text(status == McpStatus.connected ? 'Reconnect' : 'Connect'),
-              ),
-              if (connecting) ...[
-                const SizedBox(width: 12),
-                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-              ],
-            ],
-          ),
-        const SizedBox(height: 8),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Use this server'),
-          subtitle: const Text(
-            'Turning it off disconnects it and removes its tools from the agent.',
-            style: settingsMuted,
-          ),
-          value: server.enabled,
-          onChanged: connecting ? null : (v) => _run(() => _mcp.setEnabled(server.id, v)),
-        ),
-        const SizedBox(height: 16),
-        const SettingsLabel('TOOLS'),
-        if (tools.isEmpty)
-          Text(
-            status == McpStatus.connected ? 'This server has no tools.' : 'Connect to see its tools.',
-            style: settingsMuted,
-          ),
-        for (final tool in tools)
-          if (tool is McpAgentTool)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(tool.rawName),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        SettingsSection(
+          title: 'Tools',
+          children: [
+            if (tools.isEmpty)
+              Text(
+                status == McpStatus.connected ? 'This server has no tools.' : 'Connect to see its tools.',
+                style: FluteText.caption,
+              )
+            else
+              SettingsGroup(
                 children: [
-                  Text(tool.description, style: settingsMuted, maxLines: 3, overflow: TextOverflow.ellipsis),
-                  if (tool.risk == ToolRisk.write)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
-                      child: SettingsTag('needs confirmation'),
-                    ),
+                  for (final tool in tools)
+                    if (tool is McpAgentTool)
+                      SettingsSwitchRow(
+                        title: tool.rawName,
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              tool.description,
+                              style: FluteText.caption,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (tool.risk == ToolRisk.write)
+                              const Padding(
+                                padding: EdgeInsets.only(top: FluteSpace.xs),
+                                child: SettingsTag('needs confirmation'),
+                              ),
+                          ],
+                        ),
+                        value: !_mcp.isToolDisabled(server.id, tool.rawName),
+                        onChanged: connecting
+                            ? null
+                            : (on) => _run(() => _mcp.setToolDisabled(server.id, tool.rawName, !on)),
+                      ),
                 ],
               ),
-              value: !_mcp.isToolDisabled(server.id, tool.rawName),
-              onChanged: connecting
-                  ? null
-                  : (on) => _run(() => _mcp.setToolDisabled(server.id, tool.rawName, !on)),
-            ),
-      ],
+          ],
+        ),
+      ]),
     );
   }
 }
@@ -366,54 +403,50 @@ class McpAddPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: FluteColors.bg,
         scrolledUnderElevation: 0,
-        title: const Text('Add server', style: TextStyle(fontWeight: FontWeight.w300)),
+        title: const Text('Add server'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
-        children: [
-          const SettingsLabel('PRESETS'),
-          for (final preset in McpPresets.all)
-            SettingsCard(
-              onTap: () => _open(context, preset),
-              child: Row(
+        padding: settingsPagePadding(context),
+        children: settingsSpaced([
+          SettingsSection(
+            title: 'Presets',
+            children: [
+              SettingsGroup(
                 children: [
-                  const Icon(Icons.extension_outlined, color: FluteColors.accent),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(preset.title, style: const TextStyle(fontSize: 15)),
-                        const SizedBox(height: 2),
-                        Text(preset.description, style: settingsMuted),
-                      ],
+                  for (final preset in McpPresets.all)
+                    SettingsRow(
+                      leading: const SettingsIconTile(icon: Icons.extension_outlined),
+                      title: preset.title,
+                      subtitle: Text(
+                        preset.description,
+                        style: FluteText.caption,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      chevron: true,
+                      onTap: () => _open(context, preset),
                     ),
+                ],
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: 'Custom',
+            children: [
+              SettingsGroup(
+                children: [
+                  SettingsRow(
+                    leading: const SettingsIconTile(icon: Icons.dns_outlined),
+                    title: 'Custom server',
+                    subtitle: Text('Any remote MCP server that speaks Streamable HTTP.', style: FluteText.caption),
+                    chevron: true,
+                    onTap: () => _open(context, null),
                   ),
                 ],
               ),
-            ),
-          const SizedBox(height: 12),
-          const SettingsLabel('CUSTOM'),
-          SettingsCard(
-            onTap: () => _open(context, null),
-            child: const Row(
-              children: [
-                Icon(Icons.dns_outlined, color: FluteColors.accent),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Custom server', style: TextStyle(fontSize: 15)),
-                      SizedBox(height: 2),
-                      Text('Any remote MCP server that speaks Streamable HTTP.', style: settingsMuted),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
-        ],
+        ]),
       ),
     );
   }
@@ -478,7 +511,7 @@ class _SecretFields {
           enableSuggestions: false,
           decoration: InputDecoration(labelText: userLabel, hintText: hint),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: FluteSpace.md),
         secret,
       ];
     }
@@ -658,35 +691,36 @@ class _McpServerFormState extends State<_McpServerForm> {
       appBar: AppBar(
         backgroundColor: FluteColors.bg,
         scrolledUnderElevation: 0,
-        title: Text(preset?.title ?? 'Custom server', style: const TextStyle(fontWeight: FontWeight.w300)),
+        title: Text(preset?.title ?? 'Custom server'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
+        padding: settingsPagePadding(context),
         children: [
           if (preset != null) ...[
-            Text(preset.description, style: const TextStyle(fontSize: 14)),
-            const SizedBox(height: 4),
-            Text(preset.url, style: settingsMuted),
+            Text(preset.description, style: FluteText.body.copyWith(color: FluteColors.text)),
+            const SizedBox(height: FluteSpace.xs),
+            Text(preset.url, style: FluteText.caption),
             if (preset.helpUrl.isNotEmpty)
-              TextButton.icon(
-                style: TextButton.styleFrom(alignment: Alignment.centerLeft, padding: EdgeInsets.zero),
-                onPressed: () => _openLink(preset.helpUrl),
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: const Text('Get a token'),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _openLink(preset.helpUrl),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('Get a token'),
+                ),
               ),
           ] else ...[
-            const Text(
-              'Remote servers only, over https (plain http only on your own network). '
-              'Servers that run on your computer cannot run on Android.',
-              style: settingsMuted,
+            Text(
+              'Remote servers over https only. Servers that run on your computer cannot run on Android.',
+              style: FluteText.caption,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: FluteSpace.lg),
             TextField(
               controller: _name,
               enabled: !_decided,
               decoration: const InputDecoration(labelText: 'Name', hintText: 'Notion'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: FluteSpace.md),
             TextField(
               controller: _url,
               enabled: !_decided,
@@ -695,19 +729,21 @@ class _McpServerFormState extends State<_McpServerForm> {
               enableSuggestions: false,
               decoration: const InputDecoration(labelText: 'Server URL', hintText: 'https://mcp.example.com/mcp'),
             ),
+            if (!_decided) ...[
+              const SizedBox(height: FluteSpace.lg),
+              FilledButton(
+                onPressed: _busy ? null : _connect,
+                child: const Text('Connect'),
+              ),
+            ],
           ],
-          const SizedBox(height: 16),
-          if (preset == null && !_decided)
-            FilledButton(
-              onPressed: _busy ? null : _connect,
-              child: const Text('Connect'),
-            ),
           if (_signInFirst) ...[
-            const Text(
-              'Flute opens your browser so you can sign in. The access stays in this phone\'s secure storage.',
-              style: settingsMuted,
+            const SizedBox(height: FluteSpace.lg),
+            Text(
+              "Flute opens your browser so you can sign in. The access stays in this phone's secure storage.",
+              style: FluteText.caption,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: FluteSpace.md),
             FilledButton.icon(
               onPressed: _busy ? null : _signIn,
               icon: const Icon(Icons.login),
@@ -722,11 +758,12 @@ class _McpServerFormState extends State<_McpServerForm> {
               ),
           ],
           if (_showSecrets) ...[
+            const SizedBox(height: FluteSpace.lg),
             if (preset == null) ...[
-              const SettingsLabel('AUTHENTICATION'),
+              const SettingsLabel('Authentication'),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: FluteSpace.sm,
+                runSpacing: FluteSpace.sm,
                 children: [
                   for (final auth in _manualAuths)
                     ChoiceChip(
@@ -736,29 +773,30 @@ class _McpServerFormState extends State<_McpServerForm> {
                     ),
                 ],
               ),
-              const SizedBox(height: 12),
-              if (_auth == McpAuthKind.header)
+              const SizedBox(height: FluteSpace.md),
+              if (_auth == McpAuthKind.header) ...[
                 TextField(
                   controller: _secret.header,
                   autocorrect: false,
                   enableSuggestions: false,
                   decoration: const InputDecoration(labelText: 'Header name', hintText: 'X-API-Key'),
                 ),
+                const SizedBox(height: FluteSpace.md),
+              ],
             ],
-            const SizedBox(height: 12),
             ..._secret.fields(
               _auth,
               tokenLabel: preset?.secretLabel ?? _tokenLabel(_auth),
               userLabel: preset != null ? 'Email' : 'Username',
               keepSavedHint: false,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: FluteSpace.lg),
             FilledButton(
               onPressed: _busy ? null : _save,
               child: const Text('Add server'),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: FluteSpace.lg),
           if (_busy) ProgressLine(_saved != null ? 'Waiting for the browser...' : 'Working...'),
           if (_error != null) ErrorLine(_error!),
         ],
@@ -826,7 +864,7 @@ class _EditServerSheetState extends State<_EditServerSheet> {
           controller: _name,
           decoration: const InputDecoration(labelText: 'Name'),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: FluteSpace.md),
         TextField(
           controller: _url,
           keyboardType: TextInputType.url,
@@ -835,7 +873,7 @@ class _EditServerSheetState extends State<_EditServerSheet> {
           decoration: const InputDecoration(labelText: 'Server URL'),
         ),
         if (auth != McpAuthKind.none && auth != McpAuthKind.oauth) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: FluteSpace.md),
           ..._secret.fields(
             auth,
             tokenLabel: _tokenLabel(auth),
@@ -843,7 +881,7 @@ class _EditServerSheetState extends State<_EditServerSheet> {
             keepSavedHint: true,
           ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: FluteSpace.md),
         if (_busy) const ProgressLine('Saving...'),
         if (_error != null) ErrorLine(_error!),
         Row(

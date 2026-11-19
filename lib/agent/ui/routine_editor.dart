@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:material_ui/material_ui.dart';
 
 import '../../app/flute.dart';
@@ -100,6 +101,7 @@ class _RoutineEditorPageState extends State<RoutineEditorPage> {
       setState(() => _error = problem);
       return;
     }
+    HapticFeedback.lightImpact();
     setState(() {
       _error = null;
       _saving = true;
@@ -151,26 +153,22 @@ class _RoutineEditorPageState extends State<RoutineEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.paddingOf(context).bottom + 24;
     return Scaffold(
       backgroundColor: FluteColors.bg,
       appBar: AppBar(
         backgroundColor: FluteColors.bg,
         scrolledUnderElevation: 0,
-        title: Text(
-          _base == null ? 'New routine' : 'Edit routine',
-          style: const TextStyle(fontWeight: FontWeight.w300),
-        ),
+        title: Text(_base == null ? 'New routine' : 'Edit routine'),
       ),
       body: ListView(
-        padding: EdgeInsets.fromLTRB(24, 8, 24, bottom),
+        padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.sm, FluteSpace.lg, FluteSpace.xl),
         children: [
           TextField(
             controller: _name,
             maxLength: 80,
             decoration: const InputDecoration(labelText: 'Name', hintText: 'Morning briefing'),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: FluteSpace.md),
           TextField(
             controller: _prompt,
             minLines: 3,
@@ -182,123 +180,140 @@ class _RoutineEditorPageState extends State<RoutineEditorPage> {
               alignLabelWithHint: true,
             ),
           ),
-          const SizedBox(height: 16),
-          SegmentedButton<RoutineTrigger>(
-            segments: [
-              for (final trigger in RoutineTrigger.values)
-                ButtonSegment(value: trigger, label: Text(_triggerLabels[trigger]!)),
-            ],
-            selected: {_trigger},
-            onSelectionChanged: _saving ? null : (s) => setState(() => _trigger = s.first),
-          ),
-          const SizedBox(height: 8),
-          if (_trigger != RoutineTrigger.interval)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Time', style: TextStyle(color: FluteColors.text)),
-              trailing: Text(
-                formatMinuteOfDay(_minuteOfDay),
-                style: const TextStyle(color: FluteColors.text, fontSize: 16),
+          const SizedBox(height: FluteSpace.xl),
+          SettingsSection(
+            title: 'Schedule',
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<RoutineTrigger>(
+                  segments: [
+                    for (final trigger in RoutineTrigger.values)
+                      ButtonSegment(value: trigger, label: Text(_triggerLabels[trigger]!)),
+                  ],
+                  selected: {_trigger},
+                  showSelectedIcon: false,
+                  onSelectionChanged: _saving ? null : (s) => setState(() => _trigger = s.first),
+                ),
               ),
-              onTap: _saving ? null : _pickTime,
-            ),
-          if (_trigger == RoutineTrigger.weekly) ...[
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (var i = 0; i < 7; i++)
-                  FilterChip(
-                    label: Text(_dayLabels[i]),
-                    selected: _days.contains(i + 1),
-                    onSelected: _saving ? null : (_) => _toggleDay(i + 1),
+              if (_trigger != RoutineTrigger.interval)
+                SettingsGroup(
+                  children: [
+                    SettingsRow(
+                      title: 'Time',
+                      onTap: _saving ? null : _pickTime,
+                      trailing: ActionChip(
+                        avatar: const Icon(Icons.schedule, size: 16),
+                        label: Text(formatMinuteOfDay(_minuteOfDay)),
+                        onPressed: _saving ? null : _pickTime,
+                      ),
+                    ),
+                  ],
+                ),
+              if (_trigger == RoutineTrigger.weekly)
+                Wrap(
+                  spacing: FluteSpace.sm,
+                  runSpacing: FluteSpace.sm,
+                  children: [
+                    for (var i = 0; i < 7; i++)
+                      FilterChip(
+                        label: Text(_dayLabels[i]),
+                        selected: _days.contains(i + 1),
+                        onSelected: _saving ? null : (_) => _toggleDay(i + 1),
+                      ),
+                  ],
+                ),
+              if (_trigger == RoutineTrigger.interval)
+                TextField(
+                  controller: _every,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Minutes between runs',
+                    hintText: '60 (at least 15)',
                   ),
-              ],
-            ),
-          ],
-          if (_trigger == RoutineTrigger.interval)
-            TextField(
-              controller: _every,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Minutes between runs',
-                hintText: '60 (at least 15)',
-              ),
-            ),
-          const SizedBox(height: 12),
+                ),
+            ],
+          ),
+          const SizedBox(height: FluteSpace.xl),
           TextField(
             controller: _model,
             autocorrect: false,
             enableSuggestions: false,
             decoration: const InputDecoration(
               labelText: 'Model (optional)',
-              hintText: 'Empty: the chat model',
-              helperText: 'A model id from your provider, used for this routine only.',
+              helperText: 'A model id from your provider, used for this routine only. Empty uses the chat model.',
+              helperMaxLines: 2,
             ),
           ),
-          const SizedBox(height: 16),
-          _switchRow(
-            title: 'May change things',
-            subtitle: _allowWrites
-                ? 'On: it can change things (launcher mode, notes, calendar, contacts) without asking. It never runs sandbox code or deletes anything.'
-                : 'Off: it can only read. Anything it tries to change is refused.',
-            value: _allowWrites,
-            onChanged: (v) => setState(() => _allowWrites = v),
-          ),
-          _switchRow(
-            title: 'Speak the summary',
-            subtitle: 'When the screen is on, read one sentence aloud after the run.',
-            value: _speak,
-            onChanged: (v) => setState(() => _speak = v),
-          ),
-          _switchRow(
-            title: 'On',
-            subtitle: 'Runs on its schedule, even when Flute is closed.',
-            value: _enabled,
-            onChanged: (v) => setState(() => _enabled = v),
-          ),
-          const SizedBox(height: 12),
-          if (_error != null) ErrorLine(_error!),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: Text(_saving ? 'Saving…' : 'Save'),
+          const SizedBox(height: FluteSpace.xl),
+          SettingsSection(
+            title: 'Options',
+            children: [
+              SettingsGroup(
+                children: [
+                  SettingsSwitchRow(
+                    title: 'May change things',
+                    subtitle: Text(
+                      _allowWrites
+                          ? 'On: it can change launcher mode, notes, calendar and contacts without asking. It never runs sandbox code or deletes anything.'
+                          : 'Off: it can only read. Anything it tries to change is refused.',
+                      style: FluteText.caption,
+                    ),
+                    value: _allowWrites,
+                    onChanged: _saving ? null : (v) => setState(() => _allowWrites = v),
+                  ),
+                  SettingsSwitchRow(
+                    title: 'Speak the summary',
+                    subtitle: Text(
+                      'When the screen is on, read one sentence aloud after the run.',
+                      style: FluteText.caption,
+                    ),
+                    value: _speak,
+                    onChanged: _saving ? null : (v) => setState(() => _speak = v),
+                  ),
+                  SettingsSwitchRow(
+                    title: 'On',
+                    subtitle: Text(
+                      'Runs on its schedule, even when Flute is closed.',
+                      style: FluteText.caption,
+                    ),
+                    value: _enabled,
+                    onChanged: _saving ? null : (v) => setState(() => _enabled = v),
+                  ),
+                ],
+              ),
+            ],
           ),
           if (_base != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                onPressed: _saving ? null : _delete,
-                child: const Text('Delete routine', style: TextStyle(color: settingsAlert)),
+            Padding(
+              padding: const EdgeInsets.only(top: FluteSpace.xl),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: SettingsDangerButton(
+                  label: 'Delete routine',
+                  onPressed: _saving ? null : _delete,
+                ),
               ),
             ),
         ],
       ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.sm, FluteSpace.lg, FluteSpace.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_error != null) ErrorLine(_error!),
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Text(_saving ? 'Saving…' : 'Save'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
-
-  Widget _switchRow({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(color: FluteColors.text, fontSize: 14)),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: settingsMuted),
-                ],
-              ),
-            ),
-            Switch(value: value, onChanged: _saving ? null : onChanged),
-          ],
-        ),
-      );
 }

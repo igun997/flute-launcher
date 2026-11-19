@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../agent/ui/chat_bubbles.dart';
 import '../dev/bench_page.dart';
 import '../app/flute.dart';
 import '../app/theme.dart';
@@ -21,10 +22,7 @@ Future<void> openSettings(BuildContext context, Flute flute) {
   );
 }
 
-Duration _motion(BuildContext context, int ms) =>
-    MediaQuery.disableAnimationsOf(context) ? Duration.zero : Duration(milliseconds: ms);
-
-const _subtle = TextStyle(color: FluteColors.muted, fontSize: 13);
+const _subtle = FluteText.caption;
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.flute});
@@ -37,10 +35,15 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: FluteColors.bg,
         scrolledUnderElevation: 0,
-        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w300)),
+        title: const Text('Settings'),
       ),
       body: ListView(
-        padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.paddingOf(context).bottom + 32),
+        padding: EdgeInsets.fromLTRB(
+          FluteSpace.lg,
+          0,
+          FluteSpace.lg,
+          MediaQuery.paddingOf(context).bottom + FluteSpace.xxl,
+        ),
         children: [
           _Section('SETUP', [
             ListenableBuilder(
@@ -207,7 +210,7 @@ class SettingsPage extends StatelessWidget {
                         style: _subtle,
                       ),
                       trailing: wake.systemDoubleTapWake
-                          ? const Text('On', style: TextStyle(color: FluteColors.accent, fontSize: 15))
+                          ? Text('On', style: FluteText.label.copyWith(color: FluteColors.accent))
                           : TextButton(onPressed: FluteNative.openMotionSettings, child: const Text('Open')),
                     ),
                     if (wake.hasProximity)
@@ -292,13 +295,13 @@ class SettingsPage extends StatelessWidget {
             ),
           ]),
           Padding(
-            padding: const EdgeInsets.only(top: 32),
+            padding: const EdgeInsets.only(top: FluteSpace.xxl),
             child: Center(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onLongPress: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const BenchPage())),
                 child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                  padding: EdgeInsets.symmetric(vertical: FluteSpace.lg, horizontal: FluteSpace.xl),
                   child: Text('Flute 0.1.0', style: _subtle),
                 ),
               ),
@@ -310,6 +313,7 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
+/// A titled group of rows on one tonal surface. The title is an overline; rows keep their own padding.
 class _Section extends StatelessWidget {
   const _Section(this.title, this.children);
   final String title;
@@ -317,18 +321,21 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 28),
+        padding: const EdgeInsets.only(top: FluteSpace.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                title,
-                style: const TextStyle(color: FluteColors.muted, fontSize: 12, letterSpacing: 1.2),
+              padding: const EdgeInsets.only(left: FluteSpace.xs, bottom: FluteSpace.sm),
+              child: Text(title, style: FluteText.overline),
+            ),
+            DecoratedBox(
+              decoration: fluteSurface(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: FluteSpace.lg, vertical: FluteSpace.xs),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
               ),
             ),
-            ...children,
           ],
         ),
       );
@@ -348,9 +355,9 @@ class _Access extends StatelessWidget {
       title: Text(title),
       subtitle: Text(detail, style: _subtle),
       trailing: AnimatedSwitcher(
-        duration: _motion(context, 220),
+        duration: motion(context, 220),
         child: granted
-            ? const Text('On', key: ValueKey('on'), style: TextStyle(color: FluteColors.accent, fontSize: 15))
+            ? Text('On', key: const ValueKey('on'), style: FluteText.label.copyWith(color: FluteColors.accent))
             : TextButton(key: const ValueKey('allow'), onPressed: onOpen, child: const Text('Allow')),
       ),
     );
@@ -379,7 +386,7 @@ class _Stepper extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: Text(label, style: const TextStyle(fontSize: 16))),
+        Expanded(child: Text(label, style: FluteText.heading.copyWith(fontWeight: FontWeight.w500))),
         IconButton(
           tooltip: 'Less',
           onPressed: value > min ? () => onChanged(value - step) : null,
@@ -387,7 +394,11 @@ class _Stepper extends StatelessWidget {
         ),
         SizedBox(
           width: 64,
-          child: Text('$value$unit', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+          child: Text(
+            '$value$unit',
+            textAlign: TextAlign.center,
+            style: FluteText.heading.copyWith(fontWeight: FontWeight.w500),
+          ),
         ),
         IconButton(
           tooltip: 'More',
@@ -419,7 +430,7 @@ class _Schedules extends StatelessWidget {
           children: [
             if (list.isEmpty)
               const Padding(
-                padding: EdgeInsets.only(bottom: 8),
+                padding: EdgeInsets.only(bottom: FluteSpace.sm),
                 child: Text('None yet. A schedule switches mode automatically.', style: _subtle),
               ),
             for (var i = 0; i < list.length; i++)
@@ -464,15 +475,15 @@ class _Schedules extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Wrap(
-                  spacing: 8,
+                  spacing: FluteSpace.sm,
                   children: [
                     for (final m in Mode.all.where((m) => m.id != 'free'))
                       ChoiceChip(label: Text(m.name), selected: modeId == m.id, onSelected: (_) => setState(() => modeId = m.id)),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: FluteSpace.md),
                 Wrap(
-                  spacing: 6,
+                  spacing: FluteSpace.sm,
                   children: [
                     for (var d = 1; d <= 7; d++)
                       FilterChip(
@@ -482,7 +493,7 @@ class _Schedules extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: FluteSpace.md),
                 Row(
                   children: [
                     TextButton(
@@ -538,19 +549,19 @@ class _PickRow<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 56),
       child: Row(
         children: [
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 16))),
+          Expanded(child: Text(label, style: FluteText.heading.copyWith(fontWeight: FontWeight.w500))),
           DropdownButtonHideUnderline(
             child: DropdownButton<T?>(
               value: value,
               items: items,
               onChanged: onChanged,
-              dropdownColor: FluteColors.surfaceHigh,
+              dropdownColor: FluteColors.surfaceTop,
               icon: const Icon(Icons.expand_more, color: FluteColors.muted),
-              style: const TextStyle(color: FluteColors.text, fontSize: 16),
+              style: FluteText.heading.copyWith(fontWeight: FontWeight.w500, color: FluteColors.textSecondary),
             ),
           ),
         ],
@@ -575,18 +586,18 @@ class _Appearance extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             AnimatedSize(
-              duration: _motion(context, 240),
+              duration: motion(context, 240),
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
               child: s.previewActive && until != null
                   ? Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: FluteSpace.sm),
                       child: Row(
                         children: [
                           Expanded(
                             child: Text(
                               'Preview on, ends at ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')}',
-                              style: const TextStyle(color: FluteColors.warn, fontSize: 13),
+                              style: FluteText.caption.copyWith(color: FluteColors.warn),
                             ),
                           ),
                           TextButton(onPressed: s.endPreview, child: const Text('End preview')),
@@ -645,30 +656,34 @@ class _Pets extends StatelessWidget {
               onChanged: flute.pets.setEnabled,
             ),
             AnimatedSize(
-              duration: _motion(context, 240),
+              duration: motion(context, 240),
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
               child: lib == null || !flute.pets.enabled
                   ? const SizedBox.shrink()
                   : Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: FluteSpace.sm),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('Choose your character', style: _subtle),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: [
-                              for (final info in lib.infos)
-                                _PetTile(
+                          const SizedBox(height: FluteSpace.sm),
+                          SizedBox(
+                            height: 100,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: lib.infos.length,
+                              separatorBuilder: (_, _) => const SizedBox(width: FluteSpace.md),
+                              itemBuilder: (context, i) {
+                                final info = lib.infos[i];
+                                return _PetTile(
                                   library: lib,
                                   info: info,
                                   selected: flute.pets.selected.contains(info.id),
                                   onTap: () => flute.pets.select(info.id),
-                                ),
-                            ],
+                                );
+                              },
+                            ),
                           ),
                         ],
                       ),
@@ -681,6 +696,7 @@ class _Pets extends StatelessWidget {
   }
 }
 
+/// A 72 dp avatar tile in the character strip. Selected: accent hairline on the accent tint.
 class _PetTile extends StatelessWidget {
   const _PetTile({required this.library, required this.info, required this.selected, required this.onTap});
   final PetLibrary library;
@@ -696,34 +712,39 @@ class _PetTile extends StatelessWidget {
       label: info.name,
       excludeSemantics: true,
       child: PressScale(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: FluteRadius.lgAll,
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: _motion(context, 220),
-          width: 92,
-          padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
-          decoration: BoxDecoration(
-            color: selected ? FluteColors.accent.withValues(alpha: 0.12) : FluteColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: selected ? FluteColors.accent : FluteColors.line, width: selected ? 1.6 : 1),
-          ),
+        child: SizedBox(
+          width: 72,
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                width: 64,
-                height: 64,
+              AnimatedContainer(
+                duration: motion(context, 220),
+                width: 72,
+                height: 72,
+                padding: const EdgeInsets.all(FluteSpace.sm),
+                decoration: fluteSurface(
+                  color: selected ? FluteColors.accentSoft : FluteColors.surfaceHigh,
+                  border: selected ? FluteColors.accent : FluteColors.line,
+                ),
                 child: FutureBuilder<PetSprites?>(
                   future: library.sprites(info.id),
                   builder: (context, snap) {
                     final s = snap.data;
-                    return s == null ? const SizedBox.shrink() : CustomPaint(painter: _AvatarPainter(s));
+                    return s == null
+                        ? const SizedBox.shrink()
+                        : SizedBox.square(dimension: 56, child: CustomPaint(painter: _AvatarPainter(s)));
                   },
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: FluteSpace.xs),
               Text(
                 info.name,
-                style: TextStyle(fontSize: 13, color: selected ? FluteColors.accent : FluteColors.text),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: FluteText.caption.copyWith(color: selected ? FluteColors.text : FluteColors.muted),
               ),
             ],
           ),

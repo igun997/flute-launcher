@@ -142,13 +142,12 @@ class _RoutinesPageState extends State<RoutinesPage> {
   @override
   Widget build(BuildContext context) {
     final flute = widget.flute;
-    final bottom = MediaQuery.paddingOf(context).bottom + 24;
     return Scaffold(
       backgroundColor: FluteColors.bg,
       appBar: AppBar(
         backgroundColor: FluteColors.bg,
         scrolledUnderElevation: 0,
-        title: const Text('Routines', style: TextStyle(fontWeight: FontWeight.w300)),
+        title: const Text('Routines'),
         actions: [
           TextButton(onPressed: () => _openEditor(), child: const Text('New')),
         ],
@@ -158,11 +157,11 @@ class _RoutinesPageState extends State<RoutinesPage> {
         builder: (context, _) {
           final routines = flute.routines.routines;
           return ListView(
-            padding: EdgeInsets.fromLTRB(24, 8, 24, bottom),
+            padding: settingsPagePadding(context),
             children: [
               if (routines.isNotEmpty) ..._permissionBanners(),
               _viewToggle(),
-              const SizedBox(height: 16),
+              const SizedBox(height: FluteSpace.lg),
               ...(_view == _RoutinesView.calendar
                   ? _calendarView(routines)
                   : (routines.isEmpty ? _emptyState() : _list(routines))),
@@ -188,107 +187,83 @@ class _RoutinesPageState extends State<RoutinesPage> {
           ),
       ];
 
-  Widget _banner(String text, {required String actionLabel, required Future<void> Function() onAction}) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-        decoration: BoxDecoration(
-          color: FluteColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: FluteColors.warn.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          children: [
-            Expanded(child: Text(text, style: const TextStyle(color: FluteColors.softText, fontSize: 13))),
-            TextButton(onPressed: () => onAction(), child: Text(actionLabel)),
-          ],
-        ),
-      );
-
-  Widget _viewToggle() {
-    Widget segment(String label, _RoutinesView view) {
-      final selected = _view == view;
-      return Expanded(
-        child: GestureDetector(
-          key: ValueKey('view-${view.name}'),
-          onTap: () => setState(() => _view = view),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 9),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected ? FluteColors.surfaceHigh : const Color(0x00000000),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: selected ? FluteColors.text : FluteColors.muted,
-                fontSize: 13,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              ),
+  Widget _banner(String text, {required String actionLabel, required Future<void> Function() onAction}) => Padding(
+        padding: const EdgeInsets.only(bottom: FluteSpace.md),
+        child: DecoratedBox(
+          decoration: fluteSurface(border: FluteColors.warn.withValues(alpha: 0.5)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.md, FluteSpace.sm, FluteSpace.md),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(text, style: FluteText.caption.copyWith(color: FluteColors.softText)),
+                ),
+                TextButton(onPressed: () => onAction(), child: Text(actionLabel)),
+              ],
             ),
           ),
         ),
       );
-    }
 
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: FluteColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: FluteColors.line),
-      ),
-      child: Row(
-        children: [
-          segment('List', _RoutinesView.list),
-          segment('Calendar', _RoutinesView.calendar),
-        ],
-      ),
-    );
-  }
+  Widget _viewToggle() => SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<_RoutinesView>(
+          segments: const [
+            ButtonSegment(value: _RoutinesView.list, label: Text('List')),
+            ButtonSegment(value: _RoutinesView.calendar, label: Text('Calendar')),
+          ],
+          selected: {_view},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) => setState(() => _view = s.first),
+        ),
+      );
 
   List<Widget> _emptyState() => [
-        const SizedBox(height: 8),
-        const Text(
-          'Routines run by themselves on a schedule and send you the answer as a notification.',
-          style: TextStyle(color: FluteColors.softText, fontSize: 14, height: 1.4),
+        Text(
+          'Routines run on a schedule by themselves and send the answer as a notification.',
+          style: FluteText.body.copyWith(color: FluteColors.softText),
         ),
-        const SizedBox(height: 16),
-        const SettingsLabel('START WITH AN EXAMPLE'),
-        for (final example in routineExamples())
-          _exampleCard(example),
+        const SizedBox(height: FluteSpace.xl),
+        SettingsSection(
+          title: 'Start with an example',
+          children: [for (final example in routineExamples()) _exampleCard(example)],
+        ),
       ];
 
-  Widget _exampleCard(Routine example) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: FluteColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: FluteColors.line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(example.name, style: const TextStyle(color: FluteColors.text, fontSize: 15)),
-            const SizedBox(height: 4),
-            Text(example.describeTrigger(), style: settingsMuted),
-            const SizedBox(height: 6),
-            Text(example.prompt, style: const TextStyle(color: FluteColors.softText, fontSize: 13)),
-            if (example.allowWrites) ...[
-              const SizedBox(height: 4),
-              const Text('Needs "May change things" on.', style: TextStyle(color: FluteColors.warn, fontSize: 12)),
+  Widget _exampleCard(Routine example) => DecoratedBox(
+        decoration: fluteSurface(),
+        child: Padding(
+          padding: const EdgeInsets.all(FluteSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(example.name, style: FluteText.label.copyWith(color: FluteColors.text)),
+              const SizedBox(height: FluteSpace.xs),
+              Text(example.describeTrigger(), style: FluteText.caption),
+              const SizedBox(height: FluteSpace.sm),
+              Text(example.prompt, style: FluteText.caption.copyWith(color: FluteColors.softText)),
+              if (example.allowWrites) ...[
+                const SizedBox(height: FluteSpace.xs),
+                Text(
+                  'Needs "May change things" on.',
+                  style: FluteText.caption.copyWith(color: FluteColors.warn),
+                ),
+              ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(onPressed: () => _openEditor(example), child: const Text('Use this')),
+              ),
             ],
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(onPressed: () => _openEditor(example), child: const Text('Use this')),
-            ),
-          ],
+          ),
         ),
       );
 
   List<Widget> _list(List<Routine> routines) => [
-        for (final routine in routines) _routineCard(routine),
+        for (final routine in routines)
+          Padding(
+            padding: const EdgeInsets.only(bottom: FluteSpace.md),
+            child: _routineCard(routine),
+          ),
       ];
 
   Widget _routineCard(Routine routine) {
@@ -305,68 +280,64 @@ class _RoutinesPageState extends State<RoutinesPage> {
     } else {
       status = next == null ? 'Not scheduled' : 'Next ${formatRoutineTime(next, now)}';
     }
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-      decoration: BoxDecoration(
-        color: FluteColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: FluteColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => _openEditor(routine),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(routine.name, style: const TextStyle(color: FluteColors.text, fontSize: 16)),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${routine.describeTrigger()} · $status',
-                          style: TextStyle(color: paused ? FluteColors.warn : FluteColors.muted, fontSize: 13),
-                        ),
-                      ],
+    return DecoratedBox(
+      decoration: fluteSurface(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.md, FluteSpace.sm, FluteSpace.xs),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: SettingsPressable(
+                    onTap: () => _openEditor(routine),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: FluteSpace.xs),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(routine.name, style: FluteText.label.copyWith(color: FluteColors.text)),
+                          const SizedBox(height: FluteSpace.xs),
+                          Text(
+                            '${routine.describeTrigger()} · $status',
+                            style: FluteText.caption.copyWith(color: paused ? FluteColors.warn : FluteColors.muted),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Semantics(
-                label: 'Turn on ${routine.name}',
-                child: Switch(value: routine.enabled, onChanged: (on) => _setEnabled(routine, on)),
-              ),
-            ],
-          ),
-          if (latest != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6, right: 8),
-              child: InkWell(
-                key: ValueKey('last-${routine.id}'),
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => showRoutineRunSheet(context, latest, routine),
-                child: Text(
-                  '${latest.ok ? '' : (latest.skipped ? 'Skipped: ' : 'Failed: ')}${_oneLine(latest.summary, 160)}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: FluteColors.softText, fontSize: 13),
+                Semantics(
+                  label: 'Turn on ${routine.name}',
+                  child: Switch(value: routine.enabled, onChanged: (on) => _setEnabled(routine, on)),
+                ),
+              ],
+            ),
+            if (latest != null)
+              Padding(
+                padding: const EdgeInsets.only(top: FluteSpace.xs, right: FluteSpace.sm),
+                child: SettingsPressable(
+                  key: ValueKey('last-${routine.id}'),
+                  onTap: () => showRoutineRunSheet(context, latest, routine),
+                  child: Text(
+                    '${latest.ok ? '' : (latest.skipped ? 'Skipped: ' : 'Failed: ')}${_oneLine(latest.summary, 160)}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: FluteText.caption.copyWith(color: FluteColors.softText),
+                  ),
                 ),
               ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                style: TextButton.styleFrom(foregroundColor: FluteColors.textSecondary),
+                onPressed: running ? null : () => _runNow(routine),
+                child: Text(running ? 'Running…' : 'Run now'),
+              ),
             ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: running ? null : () => _runNow(routine),
-              child: Text(running ? 'Running…' : 'Run now'),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -388,22 +359,23 @@ class _RoutinesPageState extends State<RoutinesPage> {
         },
         onOpenRun: (run) => showRoutineRunSheet(context, run, widget.flute.routines.byId(run.routineId)),
       ),
-      const SizedBox(height: 8),
-      Row(
+      const SizedBox(height: FluteSpace.lg),
+      SettingsGroup(
         children: [
-          Expanded(
-            child: Text(
-              'Show my calendar events',
-              style: const TextStyle(color: FluteColors.softText, fontSize: 13),
-            ),
+          SettingsSwitchRow(
+            title: 'Show my calendar events',
+            value: _showDeviceEvents,
+            onChanged: (on) => _toggleDeviceEvents(on),
           ),
-          Switch(value: _showDeviceEvents, onChanged: (on) => _toggleDeviceEvents(on)),
         ],
       ),
       if (_calendarAccess == false)
-        const Text(
-          'Allow calendar access in Agent settings > Tools to see your events here.',
-          style: settingsMuted,
+        Padding(
+          padding: const EdgeInsets.only(top: FluteSpace.sm),
+          child: Text(
+            'Allow calendar access in Agent settings > Tools to see your events here.',
+            style: FluteText.caption,
+          ),
         ),
     ];
   }
@@ -418,33 +390,37 @@ Future<void> showRoutineRunSheet(BuildContext context, RoutineRun run, Routine? 
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: FluteColors.surface,
     builder: (ctx) {
       final height = MediaQuery.sizeOf(ctx).height;
       return ConstrainedBox(
         constraints: BoxConstraints(maxHeight: height * 0.8),
         child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.paddingOf(ctx).bottom + 24),
+          padding: EdgeInsets.fromLTRB(
+            FluteSpace.lg,
+            FluteSpace.sm,
+            FluteSpace.lg,
+            MediaQuery.paddingOf(ctx).bottom + FluteSpace.xl,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title, style: const TextStyle(color: FluteColors.text, fontSize: 17)),
-              const SizedBox(height: 4),
+              Text(title, style: FluteText.title.copyWith(color: FluteColors.text)),
+              const SizedBox(height: FluteSpace.xs),
               Text(
                 '$status · ${formatRoutineTime(run.startedAt, DateTime.now())}${run.manual ? ' · by hand' : ''}',
-                style: settingsMuted,
+                style: FluteText.caption,
               ),
-              if (stats.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(stats, style: settingsMuted),
-              ],
-              const SizedBox(height: 14),
+              if (stats.isNotEmpty) Text(stats, style: FluteText.caption),
+              const SizedBox(height: FluteSpace.lg),
               if (!run.ok && run.error != null) ErrorLine(run.error!),
               if (run.result.isNotEmpty)
-                SelectableText(run.result, style: const TextStyle(color: FluteColors.softText, fontSize: 14, height: 1.45))
+                SelectableText(
+                  run.result,
+                  style: FluteText.body.copyWith(color: FluteColors.textSecondary),
+                )
               else if (run.ok)
-                const Text('No answer was kept.', style: settingsMuted),
+                Text('No answer was kept.', style: FluteText.caption),
             ],
           ),
         ),

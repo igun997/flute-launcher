@@ -10,7 +10,11 @@ import 'chat_bubbles.dart';
 
 enum _Source { photo, camera, video, file }
 
-/// The message box above the keyboard: text, attachments, slash hints and send or stop.
+/// What the dock's round button does right now.
+enum _Action { voice, send, stop }
+
+/// The message box at the bottom: attachments, slash hints and one dock with `+`, the text and the
+/// round button (mic while empty, send with text, stop while a reply runs).
 class Composer extends StatefulWidget {
   const Composer({
     super.key,
@@ -18,7 +22,9 @@ class Composer extends StatefulWidget {
     required this.hints,
     required this.onSend,
     required this.onStop,
+    required this.onVoice,
     this.controller,
+    this.header,
   });
 
   final bool busy;
@@ -27,9 +33,13 @@ class Composer extends StatefulWidget {
   final List<String> hints;
   final void Function(String text, List<Attachment> attachments) onSend;
   final VoidCallback onStop;
+  final VoidCallback onVoice;
 
   /// Text box owned by the parent, so it can fill the box (suggestions). Optional.
   final TextEditingController? controller;
+
+  /// A quiet row shown above the dock, such as the model in use. Optional.
+  final Widget? header;
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -91,6 +101,11 @@ class _ComposerState extends State<Composer> {
     widget.onStop();
   }
 
+  void _voice() {
+    HapticFeedback.selectionClick();
+    widget.onVoice();
+  }
+
   /// Hints that match what follows the `/`. Empty unless the box starts with a slash.
   List<String> get _slashMatches {
     final value = _text.text;
@@ -111,7 +126,6 @@ class _ComposerState extends State<Composer> {
   Future<void> _showAttachMenu() async {
     final choice = await showModalBottomSheet<_Source>(
       context: context,
-      showDragHandle: true,
       builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -208,7 +222,7 @@ class _ComposerState extends State<Composer> {
       child: FadeTransition(
         opacity: animation,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(0, 8, 8, 0),
+          padding: const EdgeInsets.fromLTRB(0, FluteSpace.sm, FluteSpace.sm, 0),
           child: AttachmentThumb(attachment: attachment, size: 64, onRemove: onRemove),
         ),
       ),
@@ -219,14 +233,22 @@ class _ComposerState extends State<Composer> {
   Widget build(BuildContext context) {
     final matches = _slashMatches;
     final busy = widget.busy;
+    final header = widget.header;
+    final action = busy ? _Action.stop : (_canSend ? _Action.send : _Action.voice);
+    final onAction = switch (action) {
+      _Action.stop => _stop,
+      _Action.send => _submit,
+      _Action.voice => _voice,
+    };
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+        padding: const EdgeInsets.fromLTRB(FluteSpace.md, FluteSpace.xs, FluteSpace.md, FluteSpace.md),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (header != null) Align(alignment: Alignment.centerLeft, child: header),
             AnimatedSize(
               duration: motion(context, 180),
               curve: Curves.easeOutCubic,
@@ -234,10 +256,10 @@ class _ComposerState extends State<Composer> {
               child: matches.isEmpty
                   ? const SizedBox(width: double.infinity)
                   : Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: FluteSpace.sm),
                       child: Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
+                        spacing: FluteSpace.sm,
+                        runSpacing: FluteSpace.sm,
                         children: [
                           for (final hint in matches)
                             ActionChip(
@@ -260,7 +282,7 @@ class _ComposerState extends State<Composer> {
                 child: AnimatedList(
                   key: _trayKey,
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.only(left: 4),
+                  padding: const EdgeInsets.only(left: FluteSpace.xs),
                   itemBuilder: (_, index, animation) {
                     final attachment = _attachments[index];
                     return _trayItem(attachment, animation, onRemove: () => _removeAttachment(attachment));
@@ -268,51 +290,52 @@ class _ComposerState extends State<Composer> {
                 ),
               ),
             ),
+            // One surface for the whole dock: the field has no fill or border of its own.
             AnimatedSize(
               duration: motion(context, 180),
               curve: Curves.easeOutCubic,
               alignment: Alignment.bottomCenter,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(4, 4, 6, 4),
-                decoration: BoxDecoration(
-                  color: FluteColors.surface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: FluteColors.line),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      tooltip: 'Attach',
-                      onPressed: busy ? null : _showAttachMenu,
-                      icon: const Icon(Icons.add_circle_outline, color: FluteColors.muted),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _text,
-                        focusNode: _focus,
-                        minLines: 1,
-                        maxLines: 6,
-                        keyboardType: TextInputType.multiline,
-                        textCapitalization: TextCapitalization.sentences,
-                        cursorColor: FluteColors.accent,
-                        style: const TextStyle(fontSize: 16, height: 1.35),
-                        decoration: const InputDecoration(
-                          hintText: 'Ask Flute',
-                          hintStyle: TextStyle(color: FluteColors.muted),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+              child: DecoratedBox(
+                decoration: fluteSurface(color: FluteColors.surfaceHigh, radius: FluteRadius.xl),
+                child: Padding(
+                  padding: const EdgeInsets.all(FluteSpace.xs),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        tooltip: 'Attach',
+                        onPressed: busy ? null : _showAttachMenu,
+                        icon: const Icon(Icons.add, color: FluteColors.textSecondary),
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _text,
+                          focusNode: _focus,
+                          minLines: 1,
+                          maxLines: 6,
+                          keyboardType: TextInputType.multiline,
+                          textCapitalization: TextCapitalization.sentences,
+                          cursorColor: FluteColors.accent,
+                          style: FluteText.body.copyWith(fontSize: 16, height: 1.35, color: FluteColors.text),
+                          decoration: InputDecoration(
+                            hintText: 'Ask Flute',
+                            hintStyle: FluteText.body.copyWith(fontSize: 16, height: 1.35, color: FluteColors.muted),
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    _SendButton(
-                      busy: busy,
-                      enabled: _canSend,
-                      onPressed: busy ? _stop : _submit,
-                    ),
-                  ],
+                      const SizedBox(width: FluteSpace.xs),
+                      _DockAction(action: action, onPressed: onAction),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -336,63 +359,57 @@ class _SourceTile extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 20),
       minLeadingWidth: 28,
       leading: Icon(icon, color: FluteColors.muted),
-      title: Text(label, style: const TextStyle(fontSize: 16)),
+      title: Text(label, style: FluteText.body.copyWith(fontSize: 16)),
       onTap: () => Navigator.of(context).pop(source),
     );
   }
 }
 
-/// Send becomes a stop square while a reply is running. Its states cross-fade.
-class _SendButton extends StatelessWidget {
-  const _SendButton({required this.busy, required this.enabled, required this.onPressed});
+/// The dock's round button. Its states cross-fade. Send is the signature gradient with a soft glow,
+/// the one glowing thing on the screen; mic and stop are neutral.
+class _DockAction extends StatelessWidget {
+  const _DockAction({required this.action, required this.onPressed});
 
-  final bool busy;
-  final bool enabled;
+  final _Action action;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final active = busy || enabled;
-    final background = !busy && enabled ? FluteColors.accent : FluteColors.surfaceHigh;
-    final foreground = busy
-        ? FluteColors.text
-        : enabled
-            ? const Color(0xFF00201B)
-            : FluteColors.muted;
-    final radius = BorderRadius.circular(busy ? 12 : 20);
-    return SizedBox(
-      width: 48,
-      height: 48,
-      child: Tooltip(
-        message: busy ? 'Stop' : 'Send',
-        child: Center(
-          child: AnimatedContainer(
-            duration: motion(context, 200),
-            curve: Curves.easeOutCubic,
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: background, borderRadius: radius),
+    final send = action == _Action.send;
+    final (icon, label, color) = switch (action) {
+      _Action.voice => (Icons.mic_none_rounded, 'Voice', FluteColors.text),
+      _Action.send => (Icons.arrow_upward_rounded, 'Send', FluteColors.onAccent),
+      _Action.stop => (Icons.stop_rounded, 'Stop', FluteColors.text),
+    };
+    return Tooltip(
+      message: label,
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: AnimatedSwitcher(
+          duration: motion(context, 200),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: Tween<double>(begin: 0.85, end: 1).animate(animation), child: child),
+          ),
+          child: DecoratedBox(
+            key: ValueKey(action),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: send ? FluteGradients.signature : null,
+              color: send ? null : FluteColors.surfaceTop,
+              boxShadow: send
+                  ? [BoxShadow(color: FluteColors.accent.withValues(alpha: 0.35), blurRadius: 16)]
+                  : null,
+            ),
             child: Material(
-              color: Colors.transparent,
-              borderRadius: radius,
+              type: MaterialType.transparency,
               child: InkWell(
-                borderRadius: radius,
-                onTap: active ? onPressed : null,
-                child: Center(
-                  child: AnimatedSwitcher(
-                    duration: motion(context, 180),
-                    transitionBuilder: (child, animation) => FadeTransition(
-                      opacity: animation,
-                      child: ScaleTransition(scale: animation, child: child),
-                    ),
-                    child: Icon(
-                      busy ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-                      key: ValueKey(busy ? 'stop' : 'send'),
-                      color: foreground,
-                      size: 20,
-                    ),
-                  ),
-                ),
+                customBorder: const CircleBorder(),
+                onTap: onPressed,
+                child: Center(child: Icon(icon, size: 20, color: color)),
               ),
             ),
           ),

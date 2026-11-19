@@ -5,7 +5,6 @@ import '../../app/theme.dart';
 import '../image/image_models.dart';
 import '../llm/model_catalog.dart';
 import '../llm/model_info.dart';
-import 'settings_widgets.dart';
 
 /// Which model draws pictures, on any saved provider. Auto searches them all, the active one first.
 class ImageSettingsSection extends StatelessWidget {
@@ -41,46 +40,48 @@ class ImageSettingsSection extends StatelessWidget {
           if (owner.isNotEmpty) entries.insert(0, _Entry(owner.first, chosenModel));
         }
         final several = profiles.length > 1;
+        final note = switch ((entries.isEmpty, several)) {
+          (true, _) => "No image model was found yet. Open a provider's model list so Flute can look.",
+          (false, true) => 'Auto tries every provider, starting with the active one.',
+          (false, false) => 'Auto tries the image models this provider offers, in order.',
+        };
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                entries.isEmpty
-                    ? 'No image model was found yet. Open the model list from a provider\'s menu so Flute can look.'
-                    : several
-                        ? 'Pictures can come from any of your providers, not only the one you chat with. Auto tries them all, starting with the active one.'
-                        : 'The agent draws with the model below. Auto tries the ones this provider offers, in order.',
-                style: settingsMuted,
+            Text(note, style: FluteText.caption),
+            if (entries.isNotEmpty) ...[
+              const SizedBox(height: FluteSpace.lg),
+              InputDecorator(
+                decoration: const InputDecoration(labelText: 'Model'),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    value: chosenKey,
+                    dropdownColor: FluteColors.surfaceTop,
+                    style: FluteText.body.copyWith(color: FluteColors.text),
+                    items: [
+                      const DropdownMenuItem(value: _auto, child: Text('Auto')),
+                      for (final e in entries)
+                        DropdownMenuItem(
+                          value: e.key,
+                          child: Text(
+                            several ? '${e.profile.label} · ${e.model}' : e.model,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null || value == _auto) {
+                        settings.choose();
+                        return;
+                      }
+                      final parts = value.split(_sep);
+                      settings.choose(profileId: parts.first, model: parts.last);
+                    },
+                  ),
+                ),
               ),
-            ),
-            if (entries.isNotEmpty)
-              DropdownButton<String>(
-                isExpanded: true,
-                value: chosenKey,
-                dropdownColor: FluteColors.surfaceHigh,
-                underline: const SizedBox.shrink(),
-                items: [
-                  const DropdownMenuItem(value: _auto, child: Text('Auto')),
-                  for (final e in entries)
-                    DropdownMenuItem(
-                      value: e.key,
-                      child: Text(
-                        several ? '${e.profile.label} · ${e.model}' : e.model,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value == null || value == _auto) {
-                    settings.choose();
-                    return;
-                  }
-                  final parts = value.split(_sep);
-                  settings.choose(profileId: parts.first, model: parts.last);
-                },
-              ),
+            ],
           ],
         );
       },

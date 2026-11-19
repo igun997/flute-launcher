@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../app/theme.dart';
+import '../../home/press_scale.dart';
 import '../runtime/agent_runtime.dart';
+import '../ui/chat_bubbles.dart';
 import 'voice_controller.dart';
 import 'voice_orb.dart';
 
@@ -68,9 +70,6 @@ final _italicStar = RegExp(r'\*(.+?)\*');
 final _italicUnderscore = RegExp(r'(?<![A-Za-z0-9])_(.+?)_(?![A-Za-z0-9])');
 final _stray = RegExp(r'[*`]');
 final _spaces = RegExp(r'\s+');
-
-Duration _dur(BuildContext context, int ms) =>
-    MediaQuery.disableAnimationsOf(context) ? Duration.zero : Duration(milliseconds: ms);
 
 class _VoicePageState extends State<VoicePage> {
   /// Ids of rows that existed before the current turn. Only a newer assistant row is read aloud.
@@ -193,22 +192,21 @@ class _VoicePageState extends State<VoicePage> {
     return 'Voice input stopped. Tap the orb to try again.';
   }
 
+  /// The newest user line in the conversation, kept on screen until the next one arrives.
+  String? _lastUserText() {
+    for (final item in _agent.items.reversed) {
+      if (item is UserItem) {
+        final text = item.text.trim();
+        return text.isEmpty ? null : text;
+      }
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: FluteColors.bg,
-      appBar: AppBar(
-        backgroundColor: FluteColors.bg,
-        elevation: 0,
-        title: const Text('Voice'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'Close',
-            onPressed: () => Navigator.of(context).maybePop(),
-          ),
-        ],
-      ),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: Listenable.merge([_agent, _voice]),
@@ -220,97 +218,239 @@ class _VoicePageState extends State<VoicePage> {
 
   Widget _body(BuildContext context) {
     final status = _status();
-    final reply = _lastReplyText();
     final error = _errorText();
+    final state = _voice.state;
+    final listening = state == VoiceState.listening;
     final partial = _voice.partial;
-    final listening = _voice.state == VoiceState.listening;
-    final motion = _dur(context, 260);
+    // While listening, the live words are the user's line; the reply returns once the turn ends.
+    final userLine = partial.isNotEmpty ? partial : (listening ? null : _lastUserText());
+    final replyLine = listening ? null : _lastReplyText();
+    final duration = motion(context, 260);
     return Column(
       children: [
-        Expanded(
-          child: Center(
-            child: VoiceOrb(voice: _voice, onTap: _onOrbTap, label: status),
-          ),
-        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.sm, FluteSpace.sm, 0),
+          child: Row(
             children: [
-              AnimatedSwitcher(
-                duration: _dur(context, 220),
-                child: Text(
-                  status,
-                  key: ValueKey(status),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: FluteColors.muted, fontSize: 14),
-                ),
-              ),
-              AnimatedSize(
-                duration: motion,
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: partial.isEmpty
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          partial,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: FluteColors.text, fontSize: 18),
-                        ),
-                      ),
-              ),
-              AnimatedSize(
-                duration: motion,
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: reply == null
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 16),
-                        child: AnimatedOpacity(
-                          opacity: listening ? 0 : 1,
-                          duration: _dur(context, 220),
-                          child: AnimatedSwitcher(
-                            duration: _dur(context, 220),
-                            child: Text(
-                              reply,
-                              key: ValueKey(reply),
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: FluteColors.softText, fontSize: 15),
-                            ),
-                          ),
-                        ),
-                      ),
-              ),
-              AnimatedSize(
-                duration: motion,
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: error == null
-                    ? const SizedBox.shrink()
-                    : Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          error,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: FluteColors.warn, fontSize: 14),
-                        ),
-                      ),
+              Text('Voice', style: FluteText.overline),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                tooltip: 'Close',
+                onPressed: () => Navigator.of(context).maybePop(),
               ),
             ],
           ),
         ),
-        SwitchListTile(
-          title: const Text('Hands-free', style: TextStyle(color: FluteColors.text)),
-          value: _voice.handsFree,
-          onChanged: _voice.setHandsFree,
+        Expanded(
+          flex: 5,
+          child: Center(
+            child: VoiceOrb(voice: _voice, onTap: _onOrbTap, label: status),
+          ),
         ),
-        const SizedBox(height: 16),
+        AnimatedSwitcher(
+          duration: motion(context, 220),
+          child: Text(
+            status,
+            key: ValueKey(status),
+            textAlign: TextAlign.center,
+            style: FluteText.overline,
+          ),
+        ),
+        const SizedBox(height: FluteSpace.lg),
+        Expanded(
+          flex: 4,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: FluteSpace.xl),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: _Transcript(user: userLine, reply: replyLine, duration: duration),
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: duration,
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: error == null
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(FluteSpace.xl, 0, FluteSpace.xl, FluteSpace.md),
+                  child: Text(
+                    error,
+                    textAlign: TextAlign.center,
+                    style: FluteText.label.copyWith(fontWeight: FontWeight.w400, color: FluteColors.warn),
+                  ),
+                ),
+        ),
+        Expanded(
+          flex: 3,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: FluteSpace.xl),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _TalkButton(
+                    listening: listening,
+                    stop: state != VoiceState.idle,
+                    label: _buttonLabel(state),
+                    onTap: _onOrbTap,
+                  ),
+                  const SizedBox(width: FluteSpace.lg),
+                  _HandsFreeChip(on: _voice.handsFree, onTap: _toggleHandsFree),
+                ],
+              ),
+            ),
+          ),
+        ),
       ],
+    );
+  }
+
+  void _toggleHandsFree() {
+    HapticFeedback.selectionClick();
+    _voice.setHandsFree(!_voice.handsFree);
+  }
+
+  String _buttonLabel(VoiceState state) => switch (state) {
+        VoiceState.idle => 'Start listening',
+        VoiceState.listening => 'Stop listening',
+        VoiceState.thinking => 'Cancel',
+        VoiceState.speaking => 'Stop speaking',
+      };
+}
+
+/// The conversation on screen: what the user is saying (or last said), then the reply. Each line is
+/// capped at four lines, fades at the bottom edge, and swaps with a crossfade when it changes.
+class _Transcript extends StatelessWidget {
+  const _Transcript({required this.user, required this.reply, required this.duration});
+
+  final String? user;
+  final String? reply;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (rect) => const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [FluteColors.text, Colors.transparent],
+        stops: [0.8, 1],
+      ).createShader(rect),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Line(text: user, style: FluteText.title, duration: duration),
+          SizedBox(height: user == null || reply == null ? 0 : FluteSpace.md),
+          _Line(
+            text: reply,
+            style: FluteText.body.copyWith(color: FluteColors.textSecondary),
+            duration: duration,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Line extends StatelessWidget {
+  const _Line({required this.text, required this.style, required this.duration});
+
+  final String? text;
+  final TextStyle style;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    final line = text;
+    return AnimatedSwitcher(
+      duration: duration,
+      switchInCurve: Curves.easeOutCubic,
+      child: line == null
+          ? const SizedBox(key: ValueKey('empty'), width: double.infinity)
+          : Text(
+              line,
+              key: ValueKey(line),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: style,
+            ),
+    );
+  }
+}
+
+/// The one primary control in the thumb zone. A neutral disc; the accent ring shows only while listening.
+class _TalkButton extends StatelessWidget {
+  const _TalkButton({required this.listening, required this.stop, required this.label, required this.onTap});
+
+  final bool listening;
+  final bool stop;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: PressScale(
+        borderRadius: FluteRadius.pillAll,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: motion(context, 220),
+          curve: Curves.easeOutCubic,
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: FluteColors.surfaceHigh,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: listening ? FluteColors.accent : FluteColors.line,
+              width: listening ? 2 : 1,
+            ),
+          ),
+          child: Icon(stop ? Icons.stop_rounded : Icons.mic_rounded, size: 30, color: FluteColors.text),
+        ),
+      ),
+    );
+  }
+}
+
+/// Hands-free as a quiet pill: neutral fill, accent text only while it is on.
+class _HandsFreeChip extends StatelessWidget {
+  const _HandsFreeChip({required this.on, required this.onTap});
+
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      toggled: on,
+      label: 'Hands-free',
+      excludeSemantics: true,
+      child: PressScale(
+        borderRadius: FluteRadius.pillAll,
+        onTap: onTap,
+        child: Container(
+          height: 48,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: FluteSpace.xl),
+          decoration: BoxDecoration(color: FluteColors.surfaceHigh, borderRadius: FluteRadius.pillAll),
+          child: AnimatedDefaultTextStyle(
+            duration: motion(context, 220),
+            style: FluteText.label.copyWith(color: on ? FluteColors.accent : FluteColors.textSecondary),
+            child: const Text('Hands-free'),
+          ),
+        ),
+      ),
     );
   }
 }

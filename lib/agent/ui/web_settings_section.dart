@@ -7,7 +7,8 @@ import '../web/web_api.dart';
 import '../web/web_settings.dart';
 import 'settings_widgets.dart';
 
-/// Web search keys (Tavily or Firecrawl). Saved keys are never shown again.
+/// Web search keys (Tavily or Firecrawl). One provider's card shows at a time; saved keys are never
+/// shown again.
 class WebSettingsSection extends StatefulWidget {
   const WebSettingsSection({super.key, required this.flute});
   final Flute flute;
@@ -21,8 +22,17 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
   String? _busy;
   String? _error;
 
-  /// The provider whose block started the latest action. Null means the top-level choice.
+  /// The provider whose card started the latest action. Null means the top-level choice.
   WebProvider? _owner;
+
+  /// The provider whose card is shown. Selecting a provider with a saved key also uses it.
+  late WebProvider _viewing;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewing = widget.flute.web.provider ?? WebProvider.values.first;
+  }
 
   @override
   void dispose() {
@@ -30,6 +40,11 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  void _select(WebProvider p) {
+    setState(() => _viewing = p);
+    if (widget.flute.web.hasKey(p)) widget.flute.web.setProvider(p);
   }
 
   Future<void> _run(String label, Future<void> Function() action, {WebProvider? owner}) async {
@@ -82,82 +97,89 @@ class _WebSettingsSectionState extends State<WebSettingsSection> {
       listenable: widget.flute.web,
       builder: (context, _) {
         final web = widget.flute.web;
-        final chosen = web.provider;
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Lets the agent search the web and read pages. Add a Tavily or Firecrawl key. Keys stay on this device.',
-                style: settingsMuted,
-              ),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: settingsSpaced([
+            Text(
+              'Lets the agent search the web and read pages. Keys stay on this device.',
+              style: FluteText.caption,
             ),
-            if (_owner == null && _busy != null) ProgressLine(_busy!),
-            if (_owner == null && _error != null) ErrorLine(_error!),
-            SegmentedButton<WebProvider>(
-              emptySelectionAllowed: true,
-              segments: [
-                for (final p in WebProvider.values)
-                  ButtonSegment(value: p, label: Text(p.label), enabled: web.hasKey(p)),
+            SettingsSection(
+              title: 'Search provider',
+              children: [
+                if (_owner == null && _busy != null) ProgressLine(_busy!),
+                if (_owner == null && _error != null) ErrorLine(_error!),
+                SegmentedButton<WebProvider>(
+                  segments: [
+                    for (final p in WebProvider.values) ButtonSegment(value: p, label: Text(p.label)),
+                  ],
+                  selected: {_viewing},
+                  onSelectionChanged: (s) => _select(s.first),
+                ),
+                _providerCard(_viewing, web),
               ],
-              selected: {?chosen},
-              onSelectionChanged: (s) {
-                if (s.isNotEmpty) web.setProvider(s.first);
-              },
             ),
-            for (final p in WebProvider.values) _providerBlock(p, web),
-          ],
+          ]),
         );
       },
     );
   }
 
-  Widget _providerBlock(WebProvider p, WebSettings web) {
+  Widget _providerCard(WebProvider p, WebSettings web) {
     final saved = web.hasKey(p);
     final idle = _busy == null;
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final inUse = web.provider == p;
+    final status = inUse
+        ? 'Used for web search.'
+        : saved
+            ? 'Saved. Select it to use it.'
+            : 'Add a key to use ${p.label}.';
+    return SettingsGroup(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(FluteSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(p.label, style: const TextStyle(color: FluteColors.text, fontSize: 15)),
-              const SizedBox(width: 8),
-              if (saved) const CalmTag('Saved'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _fields[p],
-            obscureText: true,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: InputDecoration(
-              labelText: '${p.label} API key',
-              hintText: saved ? 'Paste a new key to replace it' : 'Paste it here',
-              isDense: true,
-            ),
-          ),
-          Row(
-            children: [
-              FilledButton(onPressed: idle ? () => _save(p) : null, child: const Text('Save key')),
-              const SizedBox(width: 8),
-              TextButton(onPressed: idle ? () => _openKeyPage(p) : null, child: const Text('Get a key')),
-              if (saved) ...[
-                const Spacer(),
-                TextButton(
-                  onPressed: idle ? () => _remove(p) : null,
-                  child: const Text('Remove', style: TextStyle(color: settingsAlert)),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(p.label, style: FluteText.heading.copyWith(color: FluteColors.text)),
+                  ),
+                  if (saved) const CalmTag('Saved'),
+                ],
+              ),
+              const SizedBox(height: FluteSpace.xs),
+              Text(status, style: FluteText.caption),
+              const SizedBox(height: FluteSpace.md),
+              TextField(
+                controller: _fields[p],
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: '${p.label} API key',
+                  hintText: saved ? 'Paste a new key to replace it' : 'Paste it here',
                 ),
-              ],
+              ),
+              const SizedBox(height: FluteSpace.md),
+              Row(
+                children: [
+                  FilledButton(onPressed: idle ? () => _save(p) : null, child: const Text('Save key')),
+                  const SizedBox(width: FluteSpace.sm),
+                  TextButton(onPressed: idle ? () => _openKeyPage(p) : null, child: const Text('Get a key')),
+                  if (saved) ...[
+                    const Spacer(),
+                    SettingsDangerButton(label: 'Remove', onPressed: idle ? () => _remove(p) : null),
+                  ],
+                ],
+              ),
+              if (_owner == p && _busy != null) ProgressLine(_busy!),
+              if (_owner == p && _error != null) ErrorLine(_error!),
             ],
           ),
-          if (_owner == p && _busy != null) ProgressLine(_busy!),
-          if (_owner == p && _error != null) ErrorLine(_error!),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

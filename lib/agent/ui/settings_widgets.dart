@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
 
@@ -8,10 +9,11 @@ import '../../app/theme.dart';
 import '../llm/llm_types.dart';
 import 'chat_bubbles.dart' show motion;
 
-/// Error text: readable on the dark surfaces and calmer than red.
-const settingsAlert = Color(0xFFE39A8C);
+/// Error text. Alias of [FluteColors.danger]; new code should use the token.
+const settingsAlert = FluteColors.danger;
 
-const settingsMuted = TextStyle(color: FluteColors.muted, fontSize: 12);
+/// Secondary text. Alias of [FluteText.caption]; new code should use the token.
+const settingsMuted = FluteText.caption;
 
 /// A sentence the user can read. [LlmException] messages are written to be safe to show; network
 /// and unknown failures get a plain line instead of raw error text.
@@ -29,14 +31,22 @@ String readableError(Object error) {
   return 'Something went wrong. Please try again.';
 }
 
-/// Bottom padding for settings pages: clears the navigation bar and lets the last field scroll above
-/// the keyboard.
+/// Gutters for settings pages: [FluteSpace.lg] at the sides. Clears the navigation bar and lets the
+/// last field scroll above the keyboard.
 EdgeInsets settingsPagePadding(BuildContext context) => EdgeInsets.fromLTRB(
-      24,
-      8,
-      24,
-      MediaQuery.paddingOf(context).bottom + MediaQuery.viewInsetsOf(context).bottom + 24,
+      FluteSpace.lg,
+      FluteSpace.sm,
+      FluteSpace.lg,
+      MediaQuery.paddingOf(context).bottom + MediaQuery.viewInsetsOf(context).bottom + FluteSpace.xl,
     );
+
+/// The children with [gap] between each pair. Pages put [FluteSpace.xl] between sections.
+List<Widget> settingsSpaced(List<Widget> children, {double gap = FluteSpace.xl}) => [
+      for (var i = 0; i < children.length; i++) ...[
+        if (i > 0) SizedBox(height: gap),
+        children[i],
+      ],
+    ];
 
 /// Opens a settings page with a short fade and slide. Instant when the system asks for reduced motion.
 Route<T> settingsRoute<T>(BuildContext context, WidgetBuilder builder) => PageRouteBuilder<T>(
@@ -64,7 +74,8 @@ Route<T> settingsRoute<T>(BuildContext context, WidgetBuilder builder) => PageRo
       },
     );
 
-/// A settings sub-page: back button, a title, and a scroll view that clears the bottom inset.
+/// A settings sub-page: back button, a title, and a scroll view of [children] with [FluteSpace.xl]
+/// between them.
 class SettingsSubPage extends StatelessWidget {
   const SettingsSubPage({super.key, required this.title, required this.children});
   final String title;
@@ -76,16 +87,274 @@ class SettingsSubPage extends StatelessWidget {
         appBar: AppBar(
           backgroundColor: FluteColors.bg,
           scrolledUnderElevation: 0,
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w300)),
+          title: Text(title),
         ),
         body: ListView(
           padding: settingsPagePadding(context),
-          children: children,
+          children: settingsSpaced(children),
         ),
       );
 }
 
-/// One row on the agent settings hub: icon, title, a live one-line status and a chevron.
+/// A titled block on a page: an overline label, then its [children] with [FluteSpace.md] between,
+/// then an optional caption [footer].
+class SettingsSection extends StatelessWidget {
+  const SettingsSection({super.key, this.title, this.footer, required this.children});
+  final String? title;
+  final String? footer;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null) SettingsLabel(title!),
+          ...settingsSpaced(children, gap: FluteSpace.md),
+          if (footer != null)
+            Padding(
+              padding: const EdgeInsets.only(top: FluteSpace.sm),
+              child: Text(footer!, style: FluteText.caption),
+            ),
+        ],
+      );
+}
+
+/// A `surface` card with hairline dividers between its [children], inset past [indent].
+/// Use it for a set of rows or controls that belong together.
+class SettingsGroup extends StatelessWidget {
+  const SettingsGroup({super.key, required this.children, this.indent = FluteSpace.lg});
+  final List<Widget> children;
+  final double indent;
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+        borderRadius: FluteRadius.lgAll,
+        child: DecoratedBox(
+          decoration: fluteSurface(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) Divider(height: 1, thickness: 1, indent: indent, color: FluteColors.line),
+                children[i],
+              ],
+            ],
+          ),
+        ),
+      );
+}
+
+/// Overline label above a section. Printed in capitals.
+class SettingsLabel extends StatelessWidget {
+  const SettingsLabel(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: FluteSpace.sm),
+        child: Text(text.toUpperCase(), style: FluteText.overline),
+      );
+}
+
+/// Press feedback for a tappable surface: a subtle scale (and a tint when [tint] is on), then a
+/// selection haptic on tap. Reduced motion keeps the tint and drops the scale.
+class SettingsPressable extends StatefulWidget {
+  const SettingsPressable({
+    super.key,
+    required this.onTap,
+    required this.child,
+    this.semanticsLabel,
+    this.tint = true,
+  });
+  final VoidCallback onTap;
+  final Widget child;
+
+  /// Set when this surface is a button on its own: its children are read as this one label.
+  final String? semanticsLabel;
+
+  /// Whether the pressed state tints the background. Off where the child paints its own fill.
+  final bool tint;
+
+  @override
+  State<SettingsPressable> createState() => _SettingsPressableState();
+}
+
+class _SettingsPressableState extends State<SettingsPressable> {
+  bool _down = false;
+
+  void _setDown(bool down) {
+    if (_down != down) setState(() => _down = down);
+  }
+
+  void _tap() {
+    HapticFeedback.selectionClick();
+    widget.onTap();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = motion(context, 140);
+    final scale = _down && !MediaQuery.disableAnimationsOf(context) ? 0.985 : 1.0;
+    Widget body = AnimatedContainer(
+      duration: duration,
+      curve: Curves.easeOut,
+      color: widget.tint && _down ? FluteColors.surfaceHigh : Colors.transparent,
+      child: AnimatedScale(
+        scale: scale,
+        duration: duration,
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+    body = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _setDown(true),
+      onTapUp: (_) => _setDown(false),
+      onTapCancel: () => _setDown(false),
+      onTap: _tap,
+      child: body,
+    );
+    if (widget.semanticsLabel != null) {
+      body = Semantics(button: true, label: widget.semanticsLabel, excludeSemantics: true, child: body);
+    }
+    return body;
+  }
+}
+
+/// One row in a settings group: an optional leading widget, a title with an optional [subtitle]
+/// under it, an optional [trailing] widget, and a chevron when it opens something.
+class SettingsRow extends StatelessWidget {
+  const SettingsRow({
+    super.key,
+    required this.title,
+    this.subtitle,
+    this.leading,
+    this.trailing,
+    this.chevron = false,
+    this.onTap,
+    this.semanticsLabel,
+  });
+  final String title;
+  final Widget? subtitle;
+  final Widget? leading;
+  final Widget? trailing;
+  final bool chevron;
+  final VoidCallback? onTap;
+  final String? semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: FluteSpace.lg, vertical: FluteSpace.md),
+      child: Row(
+        children: [
+          if (leading != null) ...[leading!, const SizedBox(width: FluteSpace.md)],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: FluteText.heading.copyWith(fontWeight: FontWeight.w500, color: FluteColors.text),
+                ),
+                if (subtitle != null) ...[const SizedBox(height: FluteSpace.xs), subtitle!],
+              ],
+            ),
+          ),
+          if (trailing != null) ...[const SizedBox(width: FluteSpace.sm), trailing!],
+          if (chevron)
+            const Padding(
+              padding: EdgeInsets.only(left: FluteSpace.sm),
+              child: Icon(Icons.chevron_right, color: FluteColors.faint),
+            ),
+        ],
+      ),
+    );
+    final tap = onTap;
+    if (tap == null) return row;
+    return SettingsPressable(onTap: tap, semanticsLabel: semanticsLabel, child: row);
+  }
+}
+
+/// A settings row with a switch. The whole row toggles; [busy] shows a spinner and locks it.
+class SettingsSwitchRow extends StatelessWidget {
+  const SettingsSwitchRow({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+    this.leading,
+    this.busy = false,
+  });
+  final String title;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final Widget? subtitle;
+  final Widget? leading;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final change = busy ? null : onChanged;
+    void flip(bool next) {
+      HapticFeedback.selectionClick();
+      change?.call(next);
+    }
+
+    return SettingsRow(
+      title: title,
+      subtitle: subtitle,
+      leading: leading,
+      onTap: change == null ? null : () => flip(!value),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (busy)
+            const Padding(
+              padding: EdgeInsets.only(right: FluteSpace.sm),
+              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          Switch(value: value, onChanged: change == null ? null : flip),
+        ],
+      ),
+    );
+  }
+}
+
+/// A 40 dp rounded square with an icon: the leading mark of a settings row.
+class SettingsIconTile extends StatelessWidget {
+  const SettingsIconTile({super.key, required this.icon, this.size = 40});
+  final IconData icon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+        dimension: size,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: FluteColors.surfaceHigh, borderRadius: FluteRadius.mdAll),
+          child: Icon(icon, size: size / 2, color: FluteColors.textSecondary),
+        ),
+      );
+}
+
+/// A small status dot. Colour carries the state; the text beside it says what it is.
+class StatusDot extends StatelessWidget {
+  const StatusDot(this.color, {super.key, this.size = 8});
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      );
+}
+
+/// The hub row for one area: icon tile, title, a one-line status and a chevron.
 class SettingsHubRow extends StatelessWidget {
   const SettingsHubRow({
     super.key,
@@ -100,43 +369,27 @@ class SettingsHubRow extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        excludeSemantics: true,
-        label: '$title, $status',
-        child: InkWell(
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 64),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Row(
-                children: [
-                  Icon(icon, size: 22, color: FluteColors.softText),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(title, style: const TextStyle(color: FluteColors.text, fontSize: 16)),
-                        const SizedBox(height: 2),
-                        Text(
-                          status,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: settingsMuted.copyWith(fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.chevron_right, color: FluteColors.muted),
-                ],
-              ),
-            ),
-          ),
-        ),
+  Widget build(BuildContext context) => SettingsRow(
+        leading: SettingsIconTile(icon: icon),
+        title: title,
+        subtitle: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: FluteText.caption),
+        chevron: true,
+        onTap: onTap,
+        semanticsLabel: '$title, $status',
+      );
+}
+
+/// Destructive action: a quiet text button in [FluteColors.danger]. Always behind [confirmRemove].
+class SettingsDangerButton extends StatelessWidget {
+  const SettingsDangerButton({super.key, required this.label, required this.onPressed});
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(foregroundColor: FluteColors.danger),
+        child: Text(label),
       );
 }
 
@@ -158,46 +411,42 @@ class _Appear extends StatelessWidget {
       );
 }
 
-class SettingsLabel extends StatelessWidget {
-  const SettingsLabel(this.text, {super.key});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(text, style: settingsMuted.copyWith(fontSize: 11, letterSpacing: 1.2)),
-      );
-}
-
+/// Error text, read aloud when it appears.
 class ErrorLine extends StatelessWidget {
   const ErrorLine(this.text, {super.key});
   final String text;
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: FluteSpace.sm),
         child: Semantics(
           liveRegion: true,
           child: _Appear(
-            child: Text(text, style: const TextStyle(color: settingsAlert, fontSize: 13)),
+            child: Text(
+              text,
+              style: FluteText.label.copyWith(fontWeight: FontWeight.w400, color: FluteColors.danger),
+            ),
           ),
         ),
       );
 }
 
+/// A spinner with a line of text while something runs.
 class ProgressLine extends StatelessWidget {
   const ProgressLine(this.text, {super.key});
   final String text;
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: FluteSpace.sm),
         child: _Appear(
           child: Row(
             children: [
               const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-              const SizedBox(width: 10),
-              Expanded(child: Text(text, style: const TextStyle(color: FluteColors.softText, fontSize: 13))),
+              const SizedBox(width: FluteSpace.sm),
+              Expanded(
+                child: Text(text, style: FluteText.caption.copyWith(color: FluteColors.softText)),
+              ),
             ],
           ),
         ),
@@ -212,35 +461,84 @@ class CalmTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _Appear(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: FluteColors.accent.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(8),
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: FluteSpace.sm, vertical: FluteSpace.xs),
+          decoration: BoxDecoration(color: FluteColors.accentSoft, borderRadius: FluteRadius.smAll),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.check, size: 12, color: FluteColors.accent),
-              const SizedBox(width: 4),
-              Text(text, style: const TextStyle(color: FluteColors.accent, fontSize: 12)),
+              const SizedBox(width: FluteSpace.xs),
+              Flexible(
+                child: Text(text, style: FluteText.caption.copyWith(color: FluteColors.accent)),
+              ),
             ],
           ),
         ),
       );
 }
 
+/// A warning tag: an outlined amber label for something the user should notice.
 class SettingsTag extends StatelessWidget {
   const SettingsTag(this.text, {super.key});
   final String text;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: FluteSpace.sm, vertical: FluteSpace.xs),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: FluteRadius.smAll,
           border: Border.all(color: FluteColors.warn.withValues(alpha: 0.6)),
         ),
-        child: Text(text, style: const TextStyle(color: FluteColors.warn, fontSize: 11)),
+        child: Text(text, style: FluteText.caption.copyWith(color: FluteColors.warn)),
+      );
+}
+
+/// A quiet disclosure for long explanations: a "How it works" row that opens the text under it.
+class SettingsHowItWorks extends StatefulWidget {
+  const SettingsHowItWorks({super.key, required this.text});
+  final String text;
+
+  @override
+  State<SettingsHowItWorks> createState() => _SettingsHowItWorksState();
+}
+
+class _SettingsHowItWorksState extends State<SettingsHowItWorks> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SettingsPressable(
+            tint: false,
+            semanticsLabel: 'How it works',
+            onTap: () => setState(() => _open = !_open),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('How it works', style: FluteText.caption.copyWith(color: FluteColors.softText)),
+                    Icon(_open ? Icons.expand_less : Icons.expand_more, size: 18, color: FluteColors.faint),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: motion(context, 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topLeft,
+            child: _open
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: FluteSpace.sm),
+                    child: Text(widget.text, style: FluteText.caption.copyWith(height: 1.5)),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
       );
 }
 
@@ -254,16 +552,16 @@ Future<bool> confirmRemove(
   final sure = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      backgroundColor: FluteColors.surface,
-      title: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400)),
-      content: Text(message, style: const TextStyle(color: FluteColors.softText, fontSize: 14)),
+      title: Text(title),
+      content: Text(message, style: FluteText.body.copyWith(color: FluteColors.textSecondary)),
       actions: [
         TextButton(
+          style: TextButton.styleFrom(foregroundColor: FluteColors.textSecondary),
           onPressed: () => Navigator.pop(dialogContext, false),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: settingsAlert, foregroundColor: FluteColors.bg),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: FluteColors.danger),
           onPressed: () => Navigator.pop(dialogContext, true),
           child: Text(action),
         ),
@@ -271,32 +569,6 @@ Future<bool> confirmRemove(
     ),
   );
   return sure == true;
-}
-
-/// A tappable surface in the settings style (tile radius 16, line border).
-class SettingsCard extends StatelessWidget {
-  const SettingsCard({super.key, required this.onTap, required this.child});
-  final VoidCallback onTap;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: FluteColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: FluteColors.line),
-            ),
-            child: child,
-          ),
-        ),
-      );
 }
 
 /// Bottom sheet body: title, then the form. Lifts itself above the keyboard.
@@ -311,13 +583,13 @@ class SettingsSheet extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.sm, FluteSpace.lg, FluteSpace.xl),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w400)),
-                const SizedBox(height: 16),
+                Text(title, style: FluteText.title.copyWith(color: FluteColors.text)),
+                const SizedBox(height: FluteSpace.lg),
                 ...children,
               ],
             ),

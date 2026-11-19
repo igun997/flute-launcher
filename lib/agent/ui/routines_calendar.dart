@@ -3,34 +3,21 @@ import 'package:material_ui/material_ui.dart';
 import '../../app/theme.dart';
 import '../routines/routine.dart';
 import '../tools/calendar_backend.dart';
+import 'chat_bubbles.dart' show motion;
+import 'settings_widgets.dart';
 
 /// Upcoming fires are shown this far ahead.
 const _horizon = Duration(days: 60);
 const _maxOccurrences = 500;
 const _gridDays = 42;
-
-const _palette = [
-  Color(0xFF5EEAD4),
-  Color(0xFFF5B86B),
-  Color(0xFF9AA8FF),
-  Color(0xFFF28BB0),
-  Color(0xFF9BE37A),
-  Color(0xFFC9A6FF),
-];
-const _deviceColor = Color(0xFF6B7A80);
+const _cellHeight = 48.0;
+const _dayCircle = 34.0;
+const _dotSize = 5.0;
 const _monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-
-/// A stable colour per routine, so the same routine keeps its dot colour.
-Color routineColor(String routineId) {
-  var hash = 0;
-  for (final unit in routineId.codeUnits) {
-    hash = (hash * 31 + unit) & 0x7fffffff;
-  }
-  return _palette[hash % _palette.length];
-}
+const _weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /// `2026-11-05`: the key for one local day.
 String dayKey(DateTime day) =>
@@ -63,7 +50,6 @@ class CalendarEntry {
   const CalendarEntry._({
     required this.at,
     required this.title,
-    required this.color,
     this.occurrence,
     this.run,
     this.deviceEvent = false,
@@ -71,7 +57,6 @@ class CalendarEntry {
 
   final DateTime at;
   final String title;
-  final Color color;
   final RoutineOccurrence? occurrence;
   final RoutineRun? run;
   final bool deviceEvent;
@@ -79,9 +64,8 @@ class CalendarEntry {
   bool get scheduled => occurrence != null;
 }
 
-/// Month grid (Monday first) with a dot per day that has upcoming fires, past runs or device
-/// events, and an agenda for the selected day. Swipe sideways to change the month; tap the month
-/// title to jump to today.
+/// Month grid (Monday first) with a dot per kind of entry on each day, and an agenda for the
+/// selected day. Swipe sideways to change the month; tap the month title to jump to today.
 class RoutinesCalendar extends StatefulWidget {
   const RoutinesCalendar({
     super.key,
@@ -102,7 +86,7 @@ class RoutinesCalendar extends StatefulWidget {
   final ValueChanged<RoutineOccurrence> onOpenOccurrence;
   final ValueChanged<RoutineRun> onOpenRun;
 
-  /// Device calendar events shown as grey dots (the page loads them only with permission).
+  /// Device calendar events, shown as faint dots (the page loads them only with permission).
   final List<CalendarEvent> deviceEvents;
 
   /// Called when the visible month changes, so the page can load device events for it.
@@ -167,7 +151,6 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
       add(CalendarEntry._(
         at: occurrence.at,
         title: titles[occurrence.routineId] ?? 'Routine',
-        color: routineColor(occurrence.routineId),
         occurrence: occurrence,
       ));
     }
@@ -176,13 +159,12 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
       add(CalendarEntry._(
         at: run.startedAt,
         title: titles[run.routineId] ?? 'Routine',
-        color: routineColor(run.routineId),
         run: run,
       ));
     }
     for (final event in widget.deviceEvents) {
       if (event.start.isBefore(start) || !event.start.isBefore(end)) continue;
-      add(CalendarEntry._(at: event.start, title: event.title, color: _deviceColor, deviceEvent: true));
+      add(CalendarEntry._(at: event.start, title: event.title, deviceEvent: true));
     }
     for (final list in byDay.values) {
       list.sort((a, b) => a.at.compareTo(b.at));
@@ -193,7 +175,6 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
   @override
   Widget build(BuildContext context) {
     final byDay = _entriesByDay();
-    final animate = !MediaQuery.disableAnimationsOf(context);
     final agenda = byDay[dayKey(_selected)] ?? const <CalendarEntry>[];
     final today = _dayOnly(widget.now);
 
@@ -205,7 +186,7 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
             IconButton(
               tooltip: 'Previous month',
               onPressed: () => _moveMonth(-1),
-              icon: const Text('‹', style: TextStyle(fontSize: 22, color: FluteColors.text)),
+              icon: const Icon(Icons.chevron_left),
             ),
             Expanded(
               child: GestureDetector(
@@ -215,14 +196,14 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
                 child: Text(
                   '${_monthNames[_month.month - 1]} ${_month.year}',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: FluteColors.text, fontSize: 16, fontWeight: FontWeight.w500),
+                  style: FluteText.heading.copyWith(color: FluteColors.text),
                 ),
               ),
             ),
             IconButton(
               tooltip: 'Next month',
               onPressed: () => _moveMonth(1),
-              icon: const Text('›', style: TextStyle(fontSize: 22, color: FluteColors.text)),
+              icon: const Icon(Icons.chevron_right),
             ),
           ],
         ),
@@ -235,26 +216,26 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
             if (velocity > 300) _moveMonth(-1);
           },
           child: AnimatedSwitcher(
-            duration: animate ? const Duration(milliseconds: 180) : Duration.zero,
+            duration: motion(context, 180),
             child: KeyedSubtree(
               key: ValueKey('month-${_month.year}-${_month.month}'),
               child: _grid(byDay, today),
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: FluteSpace.lg),
         Text(
           _agendaTitle(today),
-          style: const TextStyle(color: FluteColors.softText, fontSize: 14, fontWeight: FontWeight.w500),
+          style: FluteText.label.copyWith(color: FluteColors.softText),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: FluteSpace.sm),
         if (agenda.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Nothing on this day.', style: TextStyle(color: FluteColors.muted, fontSize: 13)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: FluteSpace.md),
+            child: Text('Nothing on this day.', style: FluteText.caption),
           )
         else
-          for (final entry in agenda) _agendaTile(entry),
+          SettingsGroup(children: [for (final entry in agenda) _agendaRow(entry)]),
       ],
     );
   }
@@ -270,22 +251,17 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
 
   Widget _grid(Map<String, List<CalendarEntry>> byDay, DateTime today) {
     final start = _gridStart;
-    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return Column(
       children: [
         Row(
           children: [
-            for (final label in labels)
+            for (final label in _weekdayLabels)
               Expanded(
-                child: Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: FluteColors.muted, fontSize: 11, letterSpacing: 0.4),
-                ),
+                child: Text(label, textAlign: TextAlign.center, style: FluteText.caption),
               ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: FluteSpace.xs),
         for (var week = 0; week < 6; week++)
           Row(
             children: [
@@ -309,58 +285,47 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
     final inMonth = day.month == _month.month;
     final isToday = day == today;
     final isSelected = day == _selected;
-    // Runs and device events are solid dots; scheduled fires are hollow rings.
-    final dots = <CalendarEntry>[];
-    for (final entry in entries) {
-      if (dots.length == 3) break;
-      if (!dots.any((d) => d.color == entry.color && d.scheduled == entry.scheduled)) dots.add(entry);
-    }
-    final labelColor = isToday
-        ? FluteColors.bg
-        : (inMonth ? FluteColors.text : FluteColors.muted.withValues(alpha: 0.5));
     return GestureDetector(
       key: ValueKey('day-$key'),
       behavior: HitTestBehavior.opaque,
       onTap: () => _select(day),
-      child: Container(
-        height: 46,
-        margin: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: isToday
-              ? FluteColors.accent
-              : (isSelected ? FluteColors.surfaceHigh : const Color(0x00000000)),
-          borderRadius: BorderRadius.circular(12),
-        ),
+      child: SizedBox(
+        height: _cellHeight,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              '${day.day}',
-              style: TextStyle(
-                color: labelColor,
-                fontSize: 14,
-                fontWeight: isToday ? FontWeight.w600 : FontWeight.w400,
+            Container(
+              width: _dayCircle,
+              height: _dayCircle,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSelected ? FluteColors.surfaceHigh : Colors.transparent,
+                shape: BoxShape.circle,
+                border: isToday ? Border.all(color: FluteColors.accent, width: 1.5) : null,
+              ),
+              child: Text(
+                '${day.day}',
+                style: FluteText.label.copyWith(
+                  fontWeight: isToday ? FontWeight.w600 : FontWeight.w400,
+                  color: inMonth ? FluteColors.text : FluteColors.faint,
+                ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: FluteSpace.xs),
             SizedBox(
-              height: 5,
-              child: dots.isEmpty
+              height: _dotSize,
+              child: entries.isEmpty
                   ? null
                   : Row(
                       key: ValueKey('dots-$key'),
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        for (final entry in dots)
+                        for (final entry in _dotsFor(entries))
                           Container(
-                            width: 5,
-                            height: 5,
+                            width: _dotSize,
+                            height: _dotSize,
                             margin: const EdgeInsets.symmetric(horizontal: 1),
-                            decoration: BoxDecoration(
-                              color: entry.scheduled ? null : entry.color,
-                              border: entry.scheduled ? Border.all(color: entry.color) : null,
-                              shape: BoxShape.circle,
-                            ),
+                            decoration: _dotDecoration(entry),
                           ),
                       ],
                     ),
@@ -371,72 +336,92 @@ class _RoutinesCalendarState extends State<RoutinesCalendar> {
     );
   }
 
-  Widget _agendaTile(CalendarEntry entry) {
+  /// One dot per kind of entry on a day: a scheduled fire, a past run, a device event.
+  static List<CalendarEntry> _dotsFor(List<CalendarEntry> entries) {
+    final seen = <String>{};
+    final dots = <CalendarEntry>[];
+    for (final entry in entries) {
+      final kind = entry.scheduled ? 'scheduled' : (entry.run != null ? 'run' : 'device');
+      if (seen.add(kind)) dots.add(entry);
+    }
+    return dots;
+  }
+
+  /// Scheduled fires are hollow rings; runs and device events are solid dots.
+  static BoxDecoration _dotDecoration(CalendarEntry entry) {
+    if (entry.scheduled) {
+      return BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: FluteColors.textSecondary),
+      );
+    }
+    return BoxDecoration(
+      shape: BoxShape.circle,
+      color: entry.deviceEvent ? FluteColors.faint : FluteColors.softText,
+    );
+  }
+
+  Widget _agendaRow(CalendarEntry entry) {
     final time = formatMinuteOfDay(entry.at.hour * 60 + entry.at.minute);
     final run = entry.run;
-    final String status;
     final String detail;
+    var status = '';
+    var statusColor = FluteColors.textSecondary;
     if (entry.scheduled) {
-      status = 'Scheduled';
       detail = 'Runs by itself at $time';
     } else if (run != null) {
-      status = run.skipped ? '–' : (run.ok ? '✓' : '✕');
+      if (run.skipped) {
+        status = '–';
+        statusColor = FluteColors.muted;
+      } else if (run.ok) {
+        status = '✓';
+      } else {
+        status = '✕';
+        statusColor = FluteColors.danger;
+      }
       final stats = routineRunStats(run);
       detail = run.ok
           ? (stats.isEmpty ? 'Finished' : stats)
           : (run.summary.length > 90 ? '${run.summary.substring(0, 89)}…' : run.summary);
     } else {
-      status = '';
       detail = 'From your calendar';
     }
-    final tile = Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: FluteColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: FluteColors.line),
-      ),
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: FluteSpace.lg, vertical: FluteSpace.md),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 4,
-            height: 36,
-            margin: const EdgeInsets.only(right: 10, top: 2),
-            decoration: BoxDecoration(color: entry.color, borderRadius: BorderRadius.circular(2)),
+          SizedBox(
+            width: 44,
+            child: Text(time, style: FluteText.caption.copyWith(color: FluteColors.softText)),
           ),
-          Text(time, style: const TextStyle(color: FluteColors.muted, fontSize: 13)),
-          const SizedBox(width: 10),
+          const SizedBox(width: FluteSpace.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(entry.title, style: const TextStyle(color: FluteColors.text, fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(detail, style: const TextStyle(color: FluteColors.muted, fontSize: 12)),
+                Text(entry.title, style: FluteText.label.copyWith(color: FluteColors.text)),
+                const SizedBox(height: FluteSpace.xs),
+                Text(detail, style: FluteText.caption),
               ],
             ),
           ),
           if (status.isNotEmpty)
-            Text(
-              status,
-              style: TextStyle(
-                color: run != null && !run.ok && !run.skipped ? FluteColors.warn : FluteColors.accent,
-                fontSize: 14,
-              ),
+            Padding(
+              padding: const EdgeInsets.only(left: FluteSpace.sm),
+              child: Text(status, style: FluteText.label.copyWith(color: statusColor)),
             ),
         ],
       ),
     );
     final occurrence = entry.occurrence;
     if (occurrence != null) {
-      return GestureDetector(onTap: () => widget.onOpenOccurrence(occurrence), child: tile);
+      return SettingsPressable(onTap: () => widget.onOpenOccurrence(occurrence), child: content);
     }
     final openRun = entry.run;
     if (openRun != null) {
-      return GestureDetector(onTap: () => widget.onOpenRun(openRun), child: tile);
+      return SettingsPressable(onTap: () => widget.onOpenRun(openRun), child: content);
     }
-    return tile;
+    return content;
   }
 }

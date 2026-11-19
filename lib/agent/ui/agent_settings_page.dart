@@ -8,16 +8,20 @@ import '../auth/provider_store.dart';
 import '../llm/model_info.dart';
 import '../tools/builtin_tools.dart';
 import '../voice/voice_settings_section.dart';
-import 'sandbox_settings_section.dart';
-import 'routines_section.dart';
-import 'web_settings_section.dart';
-import 'mcp_settings.dart';
 import 'image_settings_section.dart';
+import 'mcp_settings.dart';
 import 'model_picker.dart';
+import 'routines_section.dart';
+import 'sandbox_settings_section.dart';
 import 'settings_widgets.dart';
 import 'skills_settings.dart';
+import 'web_settings_section.dart';
 
-/// Agent settings hub: one row per area. Each row shows its current choice and opens its own page.
+/// Inset of a divider in a hub group: past the 40 dp icon tile and the gaps around it.
+const _rowIndent = FluteSpace.lg + 40 + FluteSpace.md;
+
+/// Agent settings hub: the active provider first, then every area in three groups. Each row shows
+/// its current choice and opens its own page.
 class AgentSettingsPage extends StatefulWidget {
   const AgentSettingsPage({super.key, required this.flute});
   final Flute flute;
@@ -51,13 +55,6 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
     if (mounted) setState(() {});
   }
 
-  String _providerStatus(Flute flute) {
-    final active = flute.providers.active;
-    if (active == null) return 'Not set up';
-    final model = active.model;
-    return model == null || model.isEmpty ? active.label : '${active.label} - $model';
-  }
-
   String _toolsStatus(Flute flute) {
     final on = _groups.where((g) => flute.builtins.isEnabled(g.key)).length;
     if (on == 0) return 'All off';
@@ -72,13 +69,6 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
     return 'Not chosen';
   }
 
-  List<Widget> _separated(List<Widget> rows) => [
-        for (var i = 0; i < rows.length; i++) ...[
-          if (i > 0) const Divider(height: 1, color: FluteColors.line),
-          rows[i],
-        ],
-      ];
-
   @override
   Widget build(BuildContext context) {
     final flute = widget.flute;
@@ -87,7 +77,7 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
       appBar: AppBar(
         backgroundColor: FluteColors.bg,
         scrolledUnderElevation: 0,
-        title: const Text('Agent settings', style: TextStyle(fontWeight: FontWeight.w300)),
+        title: const Text('Agent settings'),
       ),
       body: ListenableBuilder(
         listenable: Listenable.merge([
@@ -102,76 +92,188 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
         ]),
         builder: (context, _) => ListView(
           padding: settingsPagePadding(context),
-          children: _separated([
-            SettingsHubRow(
-              icon: Icons.auto_awesome_outlined,
-              title: 'Provider',
-              status: _providerStatus(flute),
-              onTap: () => _open(
+          children: settingsSpaced([
+            _ActiveProviderCard(
+              flute: flute,
+              onOpen: () => _open(
                 (_) => SettingsSubPage(title: 'Provider', children: [_ProviderSection(flute: flute)]),
               ),
             ),
-            SettingsHubRow(
-              icon: Icons.build_outlined,
-              title: 'Tools',
-              status: _toolsStatus(flute),
-              onTap: () => _open(
-                (_) => SettingsSubPage(title: 'Tools', children: [_ToolsSection(flute: flute)]),
-              ),
-            ),
-            RoutinesSection(flute: flute),
-            SettingsHubRow(
-              icon: Icons.record_voice_over_outlined,
-              title: 'Voice',
-              status: voiceLanguageLabel(flute.voice.language),
-              onTap: () => _open(
-                (_) => SettingsSubPage(title: 'Voice', children: [VoiceSettingsSection(voice: flute.voice)]),
-              ),
-            ),
-            SettingsHubRow(
-              icon: Icons.image_outlined,
-              title: 'Images',
-              status: flute.imageSettings.model ?? 'Automatic',
-              onTap: () => _open(
-                (_) => SettingsSubPage(title: 'Images', children: [ImageSettingsSection(flute: flute)]),
-              ),
-            ),
-            SettingsHubRow(
-              icon: Icons.terminal,
-              title: 'Sandbox',
-              status: _sandboxStatus(flute),
-              onTap: () => _open(
-                (_) => SettingsSubPage(
-                  title: 'Sandbox',
-                  children: [SandboxSettingsSection(manager: flute.sandbox)],
+            SettingsSection(
+              title: 'Assistant',
+              children: [
+                SettingsGroup(
+                  indent: _rowIndent,
+                  children: [
+                    SettingsHubRow(
+                      icon: Icons.build_outlined,
+                      title: 'Tools',
+                      status: _toolsStatus(flute),
+                      onTap: () => _open(
+                        (_) => SettingsSubPage(title: 'Tools', children: [_ToolsSection(flute: flute)]),
+                      ),
+                    ),
+                    SettingsHubRow(
+                      icon: Icons.extension_outlined,
+                      title: 'Skills',
+                      status: '${flute.skills.installed.length} ${flute.skills.installed.length == 1 ? 'skill' : 'skills'}',
+                      onTap: () => _open(
+                        (_) => SettingsSubPage(title: 'Skills', children: [SkillsSection(flute: flute)]),
+                      ),
+                    ),
+                    SettingsHubRow(
+                      icon: Icons.hub_outlined,
+                      title: 'MCP servers',
+                      status: '${flute.mcp.servers.length} ${flute.mcp.servers.length == 1 ? 'server' : 'servers'}',
+                      onTap: () => _open(
+                        (_) => SettingsSubPage(title: 'MCP servers', children: [McpServersSection(flute: flute)]),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
+              ],
             ),
-            SettingsHubRow(
-              icon: Icons.travel_explore,
-              title: 'Web search',
-              status: flute.web.provider?.label ?? 'Not set',
-              onTap: () => _open(
-                (_) => SettingsSubPage(title: 'Web search', children: [WebSettingsSection(flute: flute)]),
-              ),
+            SettingsSection(
+              title: 'Capabilities',
+              children: [
+                SettingsGroup(
+                  indent: _rowIndent,
+                  children: [
+                    SettingsHubRow(
+                      icon: Icons.image_outlined,
+                      title: 'Images',
+                      status: flute.imageSettings.model ?? 'Automatic',
+                      onTap: () => _open(
+                        (_) => SettingsSubPage(title: 'Images', children: [ImageSettingsSection(flute: flute)]),
+                      ),
+                    ),
+                    SettingsHubRow(
+                      icon: Icons.terminal,
+                      title: 'Sandbox',
+                      status: _sandboxStatus(flute),
+                      onTap: () => _open(
+                        (_) => SettingsSubPage(
+                          title: 'Sandbox',
+                          children: [SandboxSettingsSection(manager: flute.sandbox)],
+                        ),
+                      ),
+                    ),
+                    SettingsHubRow(
+                      icon: Icons.travel_explore,
+                      title: 'Web search',
+                      status: flute.web.provider?.label ?? 'Not set',
+                      onTap: () => _open(
+                        (_) => SettingsSubPage(title: 'Web search', children: [WebSettingsSection(flute: flute)]),
+                      ),
+                    ),
+                    SettingsHubRow(
+                      icon: Icons.record_voice_over_outlined,
+                      title: 'Voice',
+                      status: voiceLanguageLabel(flute.voice.language),
+                      onTap: () => _open(
+                        (_) => SettingsSubPage(title: 'Voice', children: [VoiceSettingsSection(voice: flute.voice)]),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            SettingsHubRow(
-              icon: Icons.hub_outlined,
-              title: 'MCP servers',
-              status: '${flute.mcp.servers.length} ${flute.mcp.servers.length == 1 ? 'server' : 'servers'}',
-              onTap: () => _open(
-                (_) => SettingsSubPage(title: 'MCP servers', children: [McpServersSection(flute: flute)]),
-              ),
-            ),
-            SettingsHubRow(
-              icon: Icons.extension_outlined,
-              title: 'Skills',
-              status: '${flute.skills.installed.length} ${flute.skills.installed.length == 1 ? 'skill' : 'skills'}',
-              onTap: () => _open(
-                (_) => SettingsSubPage(title: 'Skills', children: [SkillsSection(flute: flute)]),
-              ),
+            SettingsSection(
+              title: 'Automation',
+              children: [
+                SettingsGroup(
+                  indent: _rowIndent,
+                  children: [RoutinesSection(flute: flute)],
+                ),
+              ],
             ),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// The active provider as a hero card: its name, the model, a status dot and a Change action.
+/// Tapping anywhere on it opens the Provider page.
+class _ActiveProviderCard extends StatelessWidget {
+  const _ActiveProviderCard({required this.flute, required this.onOpen});
+  final Flute flute;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = flute.providers.active;
+    final model = active?.model;
+    final String title;
+    final String caption;
+    final Color dot;
+    final String action;
+    if (active == null) {
+      title = 'No provider yet';
+      caption = 'Sign in or add a gateway to start chatting.';
+      dot = FluteColors.faint;
+      action = 'Set up';
+    } else if (model == null || model.isEmpty) {
+      title = active.label;
+      caption = 'Choose a model to start chatting.';
+      // Needs the user: no model is chosen yet.
+      dot = FluteColors.warn;
+      action = 'Change';
+    } else {
+      title = active.label;
+      caption = model;
+      dot = FluteColors.accent;
+      action = 'Change';
+    }
+    return SettingsPressable(
+      tint: false,
+      semanticsLabel: '$title, $caption',
+      onTap: onOpen,
+      child: DecoratedBox(
+        decoration: fluteSurface(),
+        child: Padding(
+          padding: const EdgeInsets.all(FluteSpace.lg),
+          child: Row(
+            children: [
+              const SettingsIconTile(icon: Icons.auto_awesome_outlined, size: 44),
+              const SizedBox(width: FluteSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        StatusDot(dot),
+                        const SizedBox(width: FluteSpace.sm),
+                        Flexible(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: FluteText.heading.copyWith(color: FluteColors.text),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: FluteSpace.xs),
+                    Text(
+                      caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: FluteText.caption,
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: FluteColors.textSecondary),
+                onPressed: onOpen,
+                child: Text(action),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -291,34 +393,40 @@ class _ProviderSectionState extends State<_ProviderSection> {
         final active = store.active;
         final busy = _busy;
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (profiles.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'No provider yet. Sign in or add a gateway to start chatting.',
-                  style: TextStyle(color: FluteColors.muted, fontSize: 13),
-                ),
-              ),
-            for (final profile in profiles)
-              _ProfileRow(
-                profile: profile,
-                active: profile.id == active?.id,
-                detail: _detailOf(profile, store.accountLabel(profile.id)),
-                locked: locked,
-                onSelect: () => _select(profile),
-                onModel: () => _choose(profile),
-                onEdit: () => _edit(profile),
-                onRemove: () => _remove(profile),
-              ),
-            if (signingIn) _SignInBanner(onCancel: _cancelSignIn),
-            if (busy != null && !signingIn) ProgressLine(busy),
-            if (_error != null) ErrorLine(_error!),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: settingsSpaced([
+            SettingsSection(
+              title: 'Accounts',
+              children: [
+                if (profiles.isEmpty)
+                  Text(
+                    'No provider yet. Sign in or add a gateway to start chatting.',
+                    style: FluteText.caption,
+                  ),
+                if (profiles.isNotEmpty)
+                  SettingsGroup(
+                    children: [
+                      for (final profile in profiles)
+                        _ProfileRow(
+                          profile: profile,
+                          active: profile.id == active?.id,
+                          detail: _detailOf(profile, store.accountLabel(profile.id)),
+                          locked: locked,
+                          onSelect: () => _select(profile),
+                          onModel: () => _choose(profile),
+                          onEdit: () => _edit(profile),
+                          onRemove: () => _remove(profile),
+                        ),
+                    ],
+                  ),
+                if (signingIn) _SignInBanner(onCancel: _cancelSignIn),
+                if (busy != null && !signingIn) ProgressLine(busy),
+                if (_error != null) ErrorLine(_error!),
+              ],
+            ),
+            SettingsSection(
+              title: 'Add a provider',
+              footer: 'Uses your ChatGPT plan allowance. Manage app limits in ChatGPT > Settings > Usage.',
               children: [
                 FilledButton(
                   onPressed: locked ? null : _signInChatGpt,
@@ -334,12 +442,7 @@ class _ProviderSectionState extends State<_ProviderSection> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Uses your ChatGPT plan allowance. Manage app limits in ChatGPT > Settings > Usage.',
-              style: TextStyle(color: FluteColors.muted, fontSize: 12),
-            ),
-          ],
+          ]),
         );
       },
     );
@@ -374,22 +477,22 @@ class _ProfileRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      onTap: locked ? null : onSelect,
+    return SettingsRow(
       leading: Icon(
         active ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-        color: active ? FluteColors.accent : FluteColors.muted,
+        color: active ? FluteColors.accent : FluteColors.faint,
       ),
-      title: Text(profile.label),
+      title: profile.label,
       subtitle: Text(
         '${profile.model ?? 'No model chosen'} · $detail',
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: settingsMuted,
+        style: FluteText.caption,
       ),
+      onTap: locked ? null : onSelect,
       trailing: PopupMenuButton<_ProfileAction>(
         enabled: !locked,
+        tooltip: 'Provider options',
         icon: const Icon(Icons.more_vert, color: FluteColors.muted),
         onSelected: (action) {
           switch (action) {
@@ -421,29 +524,29 @@ class _SignInBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-      decoration: BoxDecoration(
-        color: FluteColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: FluteColors.line),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Finish in your browser', style: TextStyle(fontSize: 14)),
-                Text('Sign in there, then return to Flute.', style: settingsMuted),
-              ],
+    return DecoratedBox(
+      decoration: fluteSurface(color: FluteColors.surfaceHigh),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.md, FluteSpace.sm, FluteSpace.md),
+        child: Row(
+          children: [
+            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: FluteSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Finish in your browser',
+                    style: FluteText.label.copyWith(color: FluteColors.text),
+                  ),
+                  Text('Sign in there, then return to Flute.', style: FluteText.caption),
+                ],
+              ),
             ),
-          ),
-          TextButton(onPressed: onCancel, child: const Text('Cancel')),
-        ],
+            TextButton(onPressed: onCancel, child: const Text('Cancel')),
+          ],
+        ),
       ),
     );
   }
@@ -534,18 +637,18 @@ class _GatewaySheetState extends State<_GatewaySheet> {
     return SettingsSheet(
       title: 'Add a gateway',
       children: [
-        const Text(
+        Text(
           'Any server that speaks the OpenAI API: a self-hosted gateway, LiteLLM, Ollama or an OpenAI key. '
           'Use https; plain http only on your own network.',
-          style: settingsMuted,
+          style: FluteText.caption,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: FluteSpace.lg),
         if (saved == null) ...[
           TextField(
             controller: _name,
             decoration: const InputDecoration(labelText: 'Name'),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: FluteSpace.md),
           TextField(
             controller: _url,
             keyboardType: TextInputType.url,
@@ -556,7 +659,7 @@ class _GatewaySheetState extends State<_GatewaySheet> {
               hintText: 'https://gateway.example.com/v1',
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: FluteSpace.md),
           TextField(
             controller: _key,
             obscureText: !_showKey,
@@ -573,16 +676,16 @@ class _GatewaySheetState extends State<_GatewaySheet> {
             ),
           ),
         ] else
-          Text('${saved.label} saved.', style: const TextStyle(fontSize: 15)),
-        const SizedBox(height: 12),
+          Text('${saved.label} saved.', style: FluteText.body.copyWith(color: FluteColors.text)),
+        const SizedBox(height: FluteSpace.md),
         if (busy != null) ProgressLine(busy),
         if (_error != null) ErrorLine(_error!),
         if (count != null)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.only(bottom: FluteSpace.sm),
             child: Text(
               count == 1 ? '1 model found.' : '$count models found.',
-              style: const TextStyle(color: FluteColors.accent, fontSize: 13),
+              style: FluteText.caption.copyWith(color: FluteColors.accent),
             ),
           ),
         Row(
@@ -679,7 +782,7 @@ class _EditProviderSheetState extends State<_EditProviderSheet> {
           controller: _label,
           decoration: const InputDecoration(labelText: 'Name'),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: FluteSpace.md),
         TextField(
           controller: _url,
           keyboardType: TextInputType.url,
@@ -687,7 +790,7 @@ class _EditProviderSheetState extends State<_EditProviderSheet> {
           enableSuggestions: false,
           decoration: const InputDecoration(labelText: 'Base URL'),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: FluteSpace.md),
         TextField(
           controller: _key,
           obscureText: !_showKey,
@@ -704,7 +807,7 @@ class _EditProviderSheetState extends State<_EditProviderSheet> {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: FluteSpace.md),
         if (_busy) const ProgressLine('Saving...'),
         if (_error != null) ErrorLine(_error!),
         Row(
@@ -803,37 +906,31 @@ class _ToolsSectionState extends State<_ToolsSection> {
   Widget build(BuildContext context) {
     final busyKey = _busyKey;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final g in _groups)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(g.title),
-            subtitle: Text(
-              _on[g.key] == true && _granted[g.key] == false
-                  ? '${g.detail} Permission is off.'
-                  : g.detail,
-              style: settingsMuted,
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
+        SettingsSection(
+          title: 'Access',
+          footer: 'Changes to your calendar and contacts always ask you first.',
+          children: [
+            SettingsGroup(
               children: [
-                if (busyKey == g.key)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 10),
-                    child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                for (final g in _groups)
+                  SettingsSwitchRow(
+                    title: g.title,
+                    subtitle: Text(
+                      _on[g.key] == true && _granted[g.key] == false
+                          ? '${g.detail} Permission is off.'
+                          : g.detail,
+                      style: FluteText.caption,
+                    ),
+                    value: _on[g.key] ?? false,
+                    busy: busyKey == g.key,
+                    onChanged: busyKey != null ? null : (v) => _toggle(g, v),
                   ),
-                Switch(
-                  value: _on[g.key] ?? false,
-                  onChanged: busyKey != null ? null : (v) => _toggle(g, v),
-                ),
               ],
             ),
-          ),
-        if (_error != null) ErrorLine(_error!),
-        const Text(
-          'Changes to your calendar and contacts always ask you first.',
-          style: settingsMuted,
+            if (_error != null) ErrorLine(_error!),
+          ],
         ),
       ],
     );

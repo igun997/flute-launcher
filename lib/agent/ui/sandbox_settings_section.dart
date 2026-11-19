@@ -5,10 +5,17 @@ import '../sandbox/local_wasm_provider.dart';
 import '../sandbox/sandbox_manager.dart';
 import '../sandbox/sandbox_provider.dart';
 import '../tools/tool_support.dart';
+import 'chat_bubbles.dart' show motion;
 import 'settings_widgets.dart';
 
+const _howItWorks =
+    'A sandbox starts when the agent first needs it and stops when its run ends. Sandboxes this app '
+    'creates are deleted. One you name is paused or stopped. It also stops after 90 seconds idle and '
+    'when the app goes to the background. Keys stay on this device. Local Python has no shell and no '
+    'file access.';
+
 /// Sandbox provider choice, API keys, the local Python runtime, and a self-test.
-/// Only the provider being viewed shows its form. Saved keys are never shown again.
+/// Only the provider being viewed shows its card. Saved keys are never shown again.
 class SandboxSettingsSection extends StatefulWidget {
   const SandboxSettingsSection({super.key, required this.manager});
   final SandboxManager manager;
@@ -31,12 +38,11 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
   String? _error;
   String? _result;
   bool _localInstalled = false;
-  bool _howOpen = false;
 
   /// The block that started the latest action. Null means the top-level provider choice.
   String? _owner;
 
-  /// The provider whose form is shown. Independent of the preferred provider.
+  /// The provider whose card is shown. Independent of the preferred provider.
   late String _viewing;
 
   @override
@@ -94,7 +100,7 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
     _ => readableError(e),
   };
 
-  /// Shows a provider's form. Only a usable provider becomes the preferred one.
+  /// Shows a provider's card. Only a usable provider becomes the preferred one.
   Future<void> _view(SandboxManager m, String id) async {
     final p = m.providers.firstWhere((p) => p.id == id);
     setState(() => _viewing = id);
@@ -163,9 +169,6 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
   @override
   Widget build(BuildContext context) {
     final m = widget.manager;
-    final motionDuration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 220);
     return ListenableBuilder(
       listenable: m,
       builder: (context, _) {
@@ -173,207 +176,120 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
         final stopError = m.stopError;
         final viewed = m.providers.firstWhere((p) => p.id == _viewing, orElse: () => m.providers.last);
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Runs Python in an isolated machine and shuts it down when the answer is done.',
-                style: settingsMuted,
-              ),
-            ),
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: () => setState(() => _howOpen = !_howOpen),
-              child: Semantics(
-                button: true,
-                expanded: _howOpen,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('How it works', style: TextStyle(color: FluteColors.softText, fontSize: 13)),
-                      Icon(
-                        _howOpen ? Icons.expand_less : Icons.expand_more,
-                        size: 18,
-                        color: FluteColors.muted,
-                      ),
-                    ],
-                  ),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: settingsSpaced([
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Runs Python in an isolated machine and shuts it down when the answer is done.',
+                  style: FluteText.caption,
                 ),
-              ),
-            ),
-            AnimatedSize(
-              duration: motionDuration,
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topLeft,
-              child: _howOpen
-                  ? const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        'A sandbox starts when the agent first needs it and stops when its run ends. Sandboxes this app creates are deleted. One you name is paused or stopped. It also stops after 90 seconds idle and when the app goes to the background. Keys stay on this device. Local Python has no shell and no file access.',
-                        style: settingsMuted,
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            if (_owner == null && _busy != null) ProgressLine(_busy!),
-            if (_owner == null && _error != null) ErrorLine(_error!),
-            if (stopError != null) ErrorLine('Could not stop the last sandbox. Retrying. $stopError'),
-            SegmentedButton<String>(
-              segments: [
-                for (final p in m.providers) ButtonSegment(value: p.id, label: Text(p.label)),
+                const SettingsHowItWorks(text: _howItWorks),
               ],
-              selected: {_viewing},
-              onSelectionChanged: idle ? (s) => _view(m, s.first) : null,
             ),
-            if (!viewed.usable)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text('Add a key to use ${viewed.label}.', style: settingsMuted),
-              ),
-            AnimatedSwitcher(
-              duration: motionDuration,
-              layoutBuilder: (current, previous) => Stack(
-                alignment: Alignment.topLeft,
-                children: [...previous, ?current],
-              ),
-              transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
-              child: KeyedSubtree(
-                key: ValueKey('form-${viewed.id}'),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: viewed.needsKey ? _remoteBlock(viewed, idle) : _localBlock(idle),
+            SettingsSection(
+              title: 'Provider',
+              children: [
+                if (_owner == null && _busy != null) ProgressLine(_busy!),
+                if (_owner == null && _error != null) ErrorLine(_error!),
+                if (stopError != null) ErrorLine('Could not stop the last sandbox. Retrying. $stopError'),
+                SegmentedButton<String>(
+                  segments: [
+                    for (final p in m.providers) ButtonSegment(value: p.id, label: Text(p.label)),
+                  ],
+                  selected: {_viewing},
+                  onSelectionChanged: idle ? (s) => _view(m, s.first) : null,
                 ),
-              ),
+                AnimatedSwitcher(
+                  duration: motion(context, 220),
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.topLeft,
+                    children: [...previous, ?current],
+                  ),
+                  transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+                  child: KeyedSubtree(
+                    key: ValueKey('form-${viewed.id}'),
+                    child: viewed.needsKey ? _remoteCard(viewed, idle) : _localCard(idle),
+                  ),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.only(top: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SettingsLabel('Keep warm'),
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'Keeps the sandbox running after a run for this many minutes, so the next run starts faster. 0 stops it when the run ends.',
-                      style: settingsMuted,
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 130,
-                        child: TextField(
-                          controller: _keepWarm,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(isDense: true, suffixText: 'minutes'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton(onPressed: idle ? _saveKeepWarm : null, child: const Text('Save')),
-                    ],
-                  ),
-                  if (_owner == _ownerKeepWarm && _busy != null) ProgressLine(_busy!),
-                  if (_owner == _ownerKeepWarm && _error != null) ErrorLine(_error!),
-                ],
-              ),
+            SettingsSection(
+              title: 'Advanced',
+              children: [
+                SettingsGroup(children: [_keepWarmBlock(idle), _testBlock(idle)]),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.only(top: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SettingsLabel('Test'),
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'Runs print(1+1) in the sandbox the agent would use and reports how long it took.',
-                      style: settingsMuted,
-                    ),
-                  ),
-                  OutlinedButton(onPressed: idle ? _test : null, child: const Text('Run test')),
-                  if (_owner == _ownerTest && _busy != null) ProgressLine(_busy!),
-                  if (_owner == _ownerTest && _error != null) ErrorLine(_error!),
-                  AnimatedSwitcher(
-                    duration: motionDuration,
-                    child: _result == null
-                        ? const SizedBox.shrink(key: ValueKey('no-result'))
-                        : Padding(
-                            key: ValueKey(_result),
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Semantics(
-                              liveRegion: true,
-                              child: Text(
-                                _result!,
-                                style: const TextStyle(color: FluteColors.softText, fontSize: 13),
-                              ),
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ]),
         );
       },
     );
   }
 
-  Widget _remoteBlock(SandboxProviderStatus p, bool idle) {
+  Widget _remoteCard(SandboxProviderStatus p, bool idle) {
     final saved = p.hasKey;
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return SettingsGroup(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(FluteSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(p.label, style: const TextStyle(color: FluteColors.text, fontSize: 15)),
-              const SizedBox(width: 8),
-              if (saved) const CalmTag('Saved'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _keys[p.id],
-            obscureText: true,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: InputDecoration(
-              labelText: '${p.label} API key',
-              hintText: saved ? 'Paste a new key to replace it' : 'Paste it here',
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _urls[p.id],
-            keyboardType: TextInputType.url,
-            autocorrect: false,
-            decoration: const InputDecoration(
-              labelText: 'API address',
-              hintText: 'Optional, https only',
-              isDense: true,
-            ),
-          ),
-          Row(
-            children: [
-              FilledButton(onPressed: idle ? () => _saveKey(p) : null, child: const Text('Save key')),
-              if (saved) ...[
-                const Spacer(),
-                TextButton(
-                  onPressed: idle ? () => _remove(p) : null,
-                  child: const Text('Remove', style: TextStyle(color: settingsAlert)),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(p.label, style: FluteText.heading.copyWith(color: FluteColors.text)),
+                  ),
+                  if (saved) const CalmTag('Saved'),
+                ],
+              ),
+              if (!p.usable) ...[
+                const SizedBox(height: FluteSpace.xs),
+                Text('Add a key to use ${p.label}.', style: FluteText.caption),
               ],
+              const SizedBox(height: FluteSpace.md),
+              TextField(
+                controller: _keys[p.id],
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: '${p.label} API key',
+                  hintText: saved ? 'Paste a new key to replace it' : 'Paste it here',
+                ),
+              ),
+              const SizedBox(height: FluteSpace.sm),
+              TextField(
+                controller: _urls[p.id],
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  labelText: 'API address',
+                  hintText: 'Optional, https only',
+                ),
+              ),
+              const SizedBox(height: FluteSpace.md),
+              Row(
+                children: [
+                  FilledButton(
+                    onPressed: idle ? () => _saveKey(p) : null,
+                    child: const Text('Save key'),
+                  ),
+                  if (saved) ...[
+                    const Spacer(),
+                    SettingsDangerButton(label: 'Remove', onPressed: idle ? () => _remove(p) : null),
+                  ],
+                ],
+              ),
+              if (_owner == p.id && _busy != null) ProgressLine(_busy!),
+              if (_owner == p.id && _error != null) ErrorLine(_error!),
             ],
           ),
-          if (_owner == p.id && _busy != null) ProgressLine(_busy!),
-          if (_owner == p.id && _error != null) ErrorLine(_error!),
-          const SizedBox(height: 8),
-          Row(
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(FluteSpace.lg, 0, FluteSpace.sm, FluteSpace.md),
+          child: Row(
             children: [
               Expanded(
                 child: TextField(
@@ -381,65 +297,135 @@ class _SandboxSettingsSectionState extends State<SandboxSettingsSection> {
                   autocorrect: false,
                   decoration: const InputDecoration(
                     labelText: 'Existing sandbox ID',
-                    helperText: 'Optional. The agent resumes it and stops or pauses it after each run instead of deleting it.',
+                    helperText: 'Optional. Resumed, then paused after each run instead of deleted.',
                     helperMaxLines: 2,
-                    isDense: true,
                   ),
                 ),
               ),
-              TextButton(onPressed: idle ? () => _saveExisting(p.id) : null, child: const Text('Save')),
+              TextButton(
+                onPressed: idle ? () => _saveExisting(p.id) : null,
+                child: const Text('Save'),
+              ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _localBlock(bool idle) {
+  Widget _localCard(bool idle) {
     final sizeMb = (LocalWasmProvider.sizeBytes / (1024 * 1024)).toStringAsFixed(0);
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return SettingsGroup(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(FluteSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Local Python', style: TextStyle(color: FluteColors.text, fontSize: 15)),
-              const SizedBox(width: 8),
-              if (_localInstalled) const CalmTag('Installed'),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Local Python', style: FluteText.heading.copyWith(color: FluteColors.text)),
+                  ),
+                  if (_localInstalled) const CalmTag('Installed'),
+                ],
+              ),
+              const SizedBox(height: FluteSpace.xs),
+              Text(
+                'Python 3.12 on this phone, no account needed. About $sizeMb MB, downloaded once.',
+                style: FluteText.caption,
+              ),
+              const SizedBox(height: FluteSpace.md),
+              if (_localInstalled)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SettingsDangerButton(label: 'Delete runtime', onPressed: idle ? _deleteLocal : null),
+                )
+              else
+                FilledButton(
+                  onPressed: idle ? _downloadLocal : null,
+                  child: Text('Download runtime ($sizeMb MB)'),
+                ),
+              if (_owner == _ownerLocal && _busy != null) ProgressLine(_busy!),
+              if (_owner == _ownerLocal && _error != null) ErrorLine(_error!),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Python 3.12 on this phone, no account needed. About $sizeMb MB, downloaded once.',
-            style: settingsMuted,
+        ),
+        SettingsSwitchRow(
+          title: 'Allow internet',
+          subtitle: Text(
+            'Python can fetch public web pages and APIs. Your phone and home network stay blocked.',
+            style: FluteText.caption,
           ),
-          const SizedBox(height: 4),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Allow internet', style: TextStyle(fontSize: 15)),
-            subtitle: const Text(
-              'Python can fetch public web pages and APIs (urllib). Your phone and home network stay blocked.',
-              style: settingsMuted,
-            ),
-            value: widget.manager.localNetwork,
-            onChanged: idle ? (v) => widget.manager.setLocalNetwork(v) : null,
-          ),
-          const SizedBox(height: 4),
-          if (_localInstalled)
-            TextButton(
-              onPressed: idle ? _deleteLocal : null,
-              child: const Text('Delete runtime', style: TextStyle(color: settingsAlert)),
-            )
-          else
-            FilledButton(
-              onPressed: idle ? _downloadLocal : null,
-              child: Text('Download runtime ($sizeMb MB)'),
-            ),
-          if (_owner == _ownerLocal && _busy != null) ProgressLine(_busy!),
-          if (_owner == _ownerLocal && _error != null) ErrorLine(_error!),
-        ],
-      ),
+          value: widget.manager.localNetwork,
+          onChanged: idle ? (v) => widget.manager.setLocalNetwork(v) : null,
+        ),
+      ],
     );
   }
+
+  Widget _keepWarmBlock(bool idle) => Padding(
+        padding: const EdgeInsets.all(FluteSpace.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Keep warm', style: FluteText.heading.copyWith(color: FluteColors.text)),
+            const SizedBox(height: FluteSpace.xs),
+            Text(
+              'Keeps the sandbox running this many minutes after a run. 0 stops it when the run ends.',
+              style: FluteText.caption,
+            ),
+            const SizedBox(height: FluteSpace.md),
+            Row(
+              children: [
+                SizedBox(
+                  width: 120,
+                  child: TextField(
+                    controller: _keepWarm,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Minutes'),
+                  ),
+                ),
+                const SizedBox(width: FluteSpace.sm),
+                TextButton(onPressed: idle ? _saveKeepWarm : null, child: const Text('Save')),
+              ],
+            ),
+            if (_owner == _ownerKeepWarm && _busy != null) ProgressLine(_busy!),
+            if (_owner == _ownerKeepWarm && _error != null) ErrorLine(_error!),
+          ],
+        ),
+      );
+
+  Widget _testBlock(bool idle) => Padding(
+        padding: const EdgeInsets.all(FluteSpace.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Test', style: FluteText.heading.copyWith(color: FluteColors.text)),
+            const SizedBox(height: FluteSpace.xs),
+            Text(
+              'Runs print(1+1) in the sandbox the agent would use and reports how long it took.',
+              style: FluteText.caption,
+            ),
+            const SizedBox(height: FluteSpace.md),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(onPressed: idle ? _test : null, child: const Text('Run test')),
+            ),
+            if (_owner == _ownerTest && _busy != null) ProgressLine(_busy!),
+            if (_owner == _ownerTest && _error != null) ErrorLine(_error!),
+            if (_result != null)
+              Padding(
+                padding: const EdgeInsets.only(top: FluteSpace.sm),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    _result!,
+                    style: FluteText.caption.copyWith(color: FluteColors.softText),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
 }

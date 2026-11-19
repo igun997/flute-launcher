@@ -91,7 +91,7 @@ Future<void> showPictureMenu(BuildContext context, Offset at, ToolFile file) asy
   final choice = await showMenu<_PictureAction>(
     context: context,
     position: RelativeRect.fromRect(Rect.fromLTWH(at.dx, at.dy, 0, 0), Offset.zero & MediaQuery.sizeOf(context)),
-    color: FluteColors.surfaceHigh,
+    color: FluteColors.surfaceTop,
     items: const [
       PopupMenuItem(value: _PictureAction.save, child: Text('Save')),
       PopupMenuItem(value: _PictureAction.share, child: Text('Share')),
@@ -153,14 +153,14 @@ const _markdownSheet = GptMarkdownStyleSheet(
   codeBlock: CodeBlockStyle(
     backgroundColor: FluteColors.surface,
     borderColor: FluteColors.line,
-    borderRadius: Radius.circular(12),
+    borderRadius: Radius.circular(FluteRadius.md),
     textColor: FluteColors.text,
     fontSize: 13,
   ),
   table: TableStyle(
     borderColor: FluteColors.line,
     headerBackground: FluteColors.surfaceHigh,
-    borderRadius: Radius.circular(10),
+    borderRadius: Radius.circular(FluteRadius.sm),
   ),
 );
 
@@ -186,11 +186,9 @@ class ChatMarkdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return GptMarkdown(
       text,
-      style: TextStyle(
-        color: muted ? FluteColors.muted : FluteColors.text,
-        fontSize: muted ? 13.5 : 15.5,
-        height: 1.45,
-      ),
+      style: muted
+          ? FluteText.caption.copyWith(fontSize: 13.5, height: 1.45)
+          : FluteText.body.copyWith(fontSize: 16, height: 1.5, color: FluteColors.text),
       styleSheet: _markdownSheet,
       onLinkTap: (url, _) => _openLink(url),
     );
@@ -225,12 +223,17 @@ class UserMessage extends StatelessWidget {
               ),
             if (item.text.isNotEmpty)
               Container(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                decoration: BoxDecoration(
+                padding: const EdgeInsets.symmetric(horizontal: FluteSpace.lg, vertical: FluteSpace.md),
+                decoration: const BoxDecoration(
                   color: FluteColors.surfaceHigh,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(FluteRadius.lg),
+                    topRight: Radius.circular(FluteRadius.lg),
+                    bottomLeft: Radius.circular(FluteRadius.lg),
+                    bottomRight: Radius.circular(6),
+                  ),
                 ),
-                child: Text(item.text, style: const TextStyle(fontSize: 15.5, height: 1.4)),
+                child: Text(item.text, style: FluteText.body.copyWith(fontSize: 16, height: 1.5, color: FluteColors.text)),
               ),
           ],
         ),
@@ -267,7 +270,7 @@ class AssistantMessage extends StatelessWidget {
         if (item.error != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text(item.error!, style: const TextStyle(color: FluteColors.warn, fontSize: 13.5, height: 1.4)),
+            child: Text(item.error!, style: FluteText.caption.copyWith(fontSize: 13.5, height: 1.4, color: FluteColors.danger)),
           ),
         // Nothing generated (empty or error-only turn): no stats.
         if (hasText || hasReasoning)
@@ -371,7 +374,7 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
       mainAxisSize: MainAxisSize.min,
       children: [
         InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: FluteRadius.smAll,
           onTap: () => setState(() => _open = !_open),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -465,59 +468,76 @@ class ToolCard extends StatefulWidget {
 class _ToolCardState extends State<ToolCard> {
   bool _open = false;
 
+  /// The icon tile tints only for "needs you" (warn) and failure (danger); everything else is neutral.
+  static ({Color background, Color color}) _tileOf(ToolState state) => switch (state) {
+        ToolState.waiting => (background: FluteColors.warn.withValues(alpha: 0.14), color: FluteColors.warn),
+        ToolState.failed => (background: FluteColors.danger.withValues(alpha: 0.14), color: FluteColors.danger),
+        _ => (background: FluteColors.surfaceHigh, color: FluteColors.textSecondary),
+      };
+
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
     final output = item.output;
     final expandable = output != null && output.trim().isNotEmpty;
     final headline = item.summary.trim().split('\n').first;
+    final tile = _tileOf(item.state);
     return Material(
       color: FluteColors.surface,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: FluteRadius.lgAll,
         side: const BorderSide(color: FluteColors.line),
       ),
       child: InkWell(
         onTap: expandable ? () => setState(() => _open = !_open) : null,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
+          padding: const EdgeInsets.all(FluteSpace.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
-                  Icon(toolSourceIcon(item.source), size: 17, color: FluteColors.muted),
-                  const SizedBox(width: 10),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(color: tile.background, borderRadius: FluteRadius.smAll),
+                    child: Icon(toolSourceIcon(item.source), size: 18, color: tile.color),
+                  ),
+                  const SizedBox(width: FluteSpace.md),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          headline,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14, height: 1.3),
-                        ),
+                        Text(headline, maxLines: 2, overflow: TextOverflow.ellipsis, style: FluteText.label),
                         const SizedBox(height: 2),
-                        Text(
-                          '${toolSourceLabel(item.source)} · ${item.toolName}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: FluteColors.muted, fontSize: 11.5),
+                        Row(
+                          children: [
+                            _StateLabel(state: item.state),
+                            const SizedBox(width: FluteSpace.sm),
+                            Expanded(
+                              child: Text(
+                                '${toolSourceLabel(item.source)} · ${item.toolName}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: FluteText.caption.copyWith(fontSize: 12),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  _StateLabel(state: item.state),
                   if (expandable)
                     AnimatedRotation(
                       turns: _open ? 0.5 : 0,
                       duration: motion(context, 200),
                       curve: Curves.easeOutCubic,
-                      child: const Icon(Icons.expand_more, size: 18, color: FluteColors.muted),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: FluteSpace.xs),
+                        child: Icon(Icons.expand_more, size: 18, color: FluteColors.muted),
+                      ),
                     ),
                 ],
               ),
@@ -534,7 +554,7 @@ class _ToolCardState extends State<ToolCard> {
                 alignment: Alignment.topCenter,
                 child: _open && output != null && expandable
                     ? Padding(
-                        padding: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.only(top: FluteSpace.sm),
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 180),
                           child: SingleChildScrollView(
@@ -573,7 +593,7 @@ class ToolFileRow extends StatelessWidget {
       color: FluteColors.surfaceHigh,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: FluteRadius.mdAll,
         side: const BorderSide(color: FluteColors.line),
       ),
       child: InkWell(
@@ -624,7 +644,7 @@ class ToolFileRow extends StatelessWidget {
   }
 }
 
-/// The tool's state as quiet text with a small mark. Only waiting and failed colour it.
+/// The tool's state as a tiny dot and a word. Only waiting and failed take colour.
 class _StateLabel extends StatelessWidget {
   const _StateLabel({required this.state});
 
@@ -641,26 +661,30 @@ class _StateLabel extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (state == ToolState.running)
-            SizedBox(
-              width: 10,
-              height: 10,
-              child: CircularProgressIndicator(strokeWidth: 1.5, color: spec.color),
+            const SizedBox(
+              width: 8,
+              height: 8,
+              child: CircularProgressIndicator(strokeWidth: 1.4, color: FluteColors.muted),
             )
-          else if (spec.icon != null)
-            Icon(spec.icon, size: 13, color: spec.color),
-          const SizedBox(width: 4),
-          Text(spec.label, style: TextStyle(fontSize: 12, color: spec.color)),
+          else
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: spec.color, shape: BoxShape.circle),
+            ),
+          const SizedBox(width: 6),
+          Text(spec.label, style: FluteText.caption.copyWith(fontSize: 12, color: spec.color)),
         ],
       ),
     );
   }
 
-  static ({String label, Color color, IconData? icon}) _spec(ToolState state) => switch (state) {
-        ToolState.waiting => (label: 'Needs OK', color: FluteColors.warn, icon: Icons.front_hand_outlined),
-        ToolState.running => (label: 'Running', color: FluteColors.accent, icon: null),
-        ToolState.done => (label: 'Done', color: FluteColors.muted, icon: Icons.check),
-        ToolState.denied => (label: 'Denied', color: FluteColors.muted, icon: Icons.block),
-        ToolState.failed => (label: 'Failed', color: FluteColors.warn, icon: Icons.error_outline),
+  static ({String label, Color color}) _spec(ToolState state) => switch (state) {
+        ToolState.waiting => (label: 'Needs OK', color: FluteColors.warn),
+        ToolState.running => (label: 'Running', color: FluteColors.muted),
+        ToolState.done => (label: 'Done', color: FluteColors.muted),
+        ToolState.denied => (label: 'Denied', color: FluteColors.muted),
+        ToolState.failed => (label: 'Failed', color: FluteColors.danger),
       };
 }
 
@@ -676,7 +700,7 @@ class AttachmentThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final tile = switch (attachment.kind) {
       AttachmentKind.image => ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: FluteRadius.mdAll,
           child: Image.file(
             File(attachment.path),
             width: size,
@@ -732,7 +756,7 @@ class _FileTile extends StatelessWidget {
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: FluteColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: FluteRadius.mdAll,
         border: Border.all(color: FluteColors.line),
       ),
       child: Column(

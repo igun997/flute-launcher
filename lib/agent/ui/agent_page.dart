@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../app/flute.dart';
@@ -101,6 +102,14 @@ class _AgentPageState extends State<AgentPage> {
     );
   }
 
+  void _openVoice() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => VoicePage(agent: widget.flute.agent, voice: widget.flute.voice),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final flute = widget.flute;
@@ -128,7 +137,12 @@ class _AgentPageState extends State<AgentPage> {
                   hints: _runtime.slashHints,
                   onSend: _send,
                   onStop: _runtime.cancel,
+                  onVoice: _openVoice,
                   controller: _draft,
+                  header: _ModelChip(
+                    label: _runtime.model ?? 'Choose model',
+                    onTap: () => showModelPicker(context, flute: flute),
+                  ),
                 ),
               ],
             ),
@@ -138,6 +152,7 @@ class _AgentPageState extends State<AgentPage> {
     );
   }
 
+  /// Back, the title and one overflow menu. Everything else lives in the thumb zone.
   PreferredSizeWidget _appBar() {
     return AppBar(
       backgroundColor: FluteColors.bg,
@@ -147,25 +162,11 @@ class _AgentPageState extends State<AgentPage> {
         icon: const Icon(Icons.arrow_back),
         onPressed: widget.onClose,
       ),
-      title: const Text('Ask', style: TextStyle(fontWeight: FontWeight.w300)),
+      title: const Text('Ask'),
       actions: [
-        IconButton(
-          tooltip: 'Voice',
-          icon: const Icon(Icons.mic_none),
-          onPressed: () => Navigator.of(context).push<void>(
-            MaterialPageRoute<void>(
-              builder: (_) => VoicePage(agent: widget.flute.agent, voice: widget.flute.voice),
-            ),
-          ),
-        ),
-        _ModelChip(
-          label: _runtime.model ?? 'Choose model',
-          onTap: () => showModelPicker(context, flute: widget.flute),
-        ),
         PopupMenuButton<_Menu>(
           tooltip: 'More',
           icon: const Icon(Icons.more_vert),
-          color: FluteColors.surfaceHigh,
           onSelected: (menu) {
             switch (menu) {
               case _Menu.newChat:
@@ -179,7 +180,7 @@ class _AgentPageState extends State<AgentPage> {
             PopupMenuItem<_Menu>(value: _Menu.settings, child: const Text('Settings')),
           ],
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: FluteSpace.xs),
       ],
     );
   }
@@ -196,12 +197,12 @@ class _AgentPageState extends State<AgentPage> {
             controller: _scroll,
             reverse: true,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.md, FluteSpace.lg, FluteSpace.md),
             itemCount: items.length + extra,
             itemBuilder: (context, index) {
               if (index < extra) {
                 return const Padding(
-                  padding: EdgeInsets.only(bottom: 14),
+                  padding: EdgeInsets.only(bottom: FluteSpace.lg),
                   child: Align(alignment: Alignment.centerLeft, child: TypingDots()),
                 );
               }
@@ -211,8 +212,8 @@ class _AgentPageState extends State<AgentPage> {
           ),
         ),
         Positioned(
-          right: 16,
-          bottom: 12,
+          right: FluteSpace.lg,
+          bottom: FluteSpace.md,
           child: ValueListenableBuilder<bool>(
             valueListenable: _awayFromLatest,
             builder: (_, away, _) => _JumpToLatest(visible: away, onPressed: _toLatest),
@@ -240,7 +241,10 @@ class _RowState extends State<_Row> {
 
   @override
   Widget build(BuildContext context) {
-    final content = Padding(padding: const EdgeInsets.only(bottom: 14), child: _itemWidget(widget.item));
+    final content = Padding(
+      padding: const EdgeInsets.only(bottom: FluteSpace.lg),
+      child: _itemWidget(widget.item),
+    );
     return RepaintBoundary(child: _arrive ? enterMessage(context, content) : content);
   }
 }
@@ -252,7 +256,7 @@ Widget _itemWidget(ChatItem item) => switch (item) {
       NoticeItem() => NoticeMessage(item: item),
     };
 
-/// Shows the model in use. Long names truncate so the app bar keeps room for its other buttons.
+/// The model in use, as a quiet pill above the dock. Long names truncate. The tap area is 48 dp.
 class _ModelChip extends StatelessWidget {
   const _ModelChip({required this.label, required this.onTap});
 
@@ -265,31 +269,34 @@ class _ModelChip extends StatelessWidget {
       button: true,
       label: 'Model: $label',
       excludeSemantics: true,
-      child: SizedBox(
-        height: 48,
-        child: Center(
-          child: Material(
-            color: FluteColors.surface,
-            shape: const StadiumBorder(side: BorderSide(color: FluteColors.line)),
-            child: InkWell(
-              customBorder: const StadiumBorder(),
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 96),
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: FluteRadius.pillAll,
+          onTap: onTap,
+          child: SizedBox(
+            height: 48,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: Container(
+                  height: 32,
+                  padding: const EdgeInsets.only(left: FluteSpace.md, right: FluteSpace.sm),
+                  decoration: fluteSurface(color: FluteColors.surface, radius: FluteRadius.pill),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: FluteText.caption.copyWith(fontSize: 12.5, color: FluteColors.textSecondary),
+                        ),
                       ),
-                    ),
-                    const Icon(Icons.expand_more, size: 16, color: FluteColors.muted),
-                  ],
+                      const Icon(Icons.expand_more, size: 16, color: FluteColors.muted),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -300,7 +307,7 @@ class _ModelChip extends StatelessWidget {
   }
 }
 
-/// A round button over the list that appears once the reader has scrolled up.
+/// A pill over the list that appears once the reader has scrolled up. Neutral, never accent.
 class _JumpToLatest extends StatelessWidget {
   const _JumpToLatest({required this.visible, required this.onPressed});
 
@@ -321,20 +328,29 @@ class _JumpToLatest extends StatelessWidget {
             curve: Curves.easeOutBack,
             scale: visible ? 1 : 0.8,
             child: Material(
-              color: FluteColors.surfaceHigh,
-              shape: const CircleBorder(side: BorderSide(color: FluteColors.line)),
+              color: FluteColors.surfaceTop,
+              shape: const StadiumBorder(side: BorderSide(color: FluteColors.line)),
               child: Tooltip(
                 message: 'Jump to latest',
                 child: InkWell(
-                  customBorder: const CircleBorder(),
+                  customBorder: const StadiumBorder(),
                   onTap: () {
                     HapticFeedback.selectionClick();
                     onPressed();
                   },
                   child: const SizedBox(
-                    width: 48,
                     height: 48,
-                    child: Icon(Icons.arrow_downward_rounded, size: 20, color: FluteColors.text),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: FluteSpace.lg),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.arrow_downward_rounded, size: 18, color: FluteColors.text),
+                          SizedBox(width: FluteSpace.sm),
+                          Text('Latest', style: FluteText.label),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -355,24 +371,23 @@ class _SetupBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      margin: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.sm, FluteSpace.lg, 0),
+      padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.md, FluteSpace.sm, FluteSpace.md),
       decoration: BoxDecoration(
         color: FluteColors.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: FluteRadius.lgAll,
         border: Border.all(color: FluteColors.warn.withValues(alpha: 0.5)),
       ),
       child: Row(
         children: [
           const Icon(Icons.info_outline, size: 18, color: FluteColors.warn),
-          const SizedBox(width: 10),
+          const SizedBox(width: FluteSpace.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Add a provider to start', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                if (problem.isNotEmpty)
-                  Text(problem, style: const TextStyle(color: FluteColors.muted, fontSize: 12.5)),
+                Text('Add a provider to start', style: FluteText.label),
+                if (problem.isNotEmpty) Text(problem, style: FluteText.caption),
               ],
             ),
           ),
@@ -383,7 +398,22 @@ class _SetupBanner extends StatelessWidget {
   }
 }
 
-/// The first screen: what Flute does and four things to try. A suggestion fills the box.
+/// Plays [child] in after [index] steps, so the greeting, the line and the list arrive one by one.
+Widget _reveal(BuildContext context, int index, Widget child) {
+  if (MediaQuery.disableAnimationsOf(context)) return child;
+  return child
+      .animate(delay: (index * 90).ms)
+      .fadeIn(duration: 320.ms, curve: Curves.easeOut)
+      .slideY(begin: 0.04, end: 0, duration: 320.ms, curve: Curves.easeOutCubic);
+}
+
+String _greeting(DateTime now) => switch (now.hour) {
+      < 12 => 'Good morning',
+      < 18 => 'Good afternoon',
+      _ => 'Good evening',
+    };
+
+/// The first screen: a greeting, one calm line and four things to try as a list. A suggestion fills the box.
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onPick});
 
@@ -398,36 +428,76 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(FluteSpace.xl, FluteSpace.xxl, FluteSpace.xl, FluteSpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _reveal(context, 0, Text(_greeting(DateTime.now()), style: FluteText.display)),
+          const SizedBox(height: FluteSpace.sm),
+          _reveal(
+            context,
+            1,
+            Text(
+              'I can search, draw, check your calendar and change the launcher. I ask before I change anything.',
+              style: FluteText.body.copyWith(color: FluteColors.textSecondary),
+            ),
+          ),
+          const SizedBox(height: FluteSpace.xxl),
+          _reveal(
+            context,
+            2,
+            Material(
+              color: FluteColors.surface,
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: FluteRadius.lgAll,
+                side: const BorderSide(color: FluteColors.line),
+              ),
+              child: Column(
+                children: [
+                  for (var i = 0; i < _suggestions.length; i++) ...[
+                    if (i > 0) const Divider(height: 1, thickness: 1, indent: 64, color: FluteColors.line),
+                    _SuggestionRow(
+                      icon: _suggestions[i].icon,
+                      text: _suggestions[i].text,
+                      onTap: () => onPick(_suggestions[i].text),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestionRow extends StatelessWidget {
+  const _SuggestionRow({required this.icon, required this.text, required this.onTap});
+
+  final IconData icon;
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.md, FluteSpace.md, FluteSpace.md),
+        child: Row(
           children: [
-            const Text('What can I help with?', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w300)),
-            const SizedBox(height: 10),
-            const Text(
-              'I can control the launcher, check your calendar, draw pictures and search the web. '
-              'I ask before I change anything.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: FluteColors.muted, fontSize: 14, height: 1.4),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(color: FluteColors.surfaceHigh, borderRadius: FluteRadius.smAll),
+              child: Icon(icon, size: 18, color: FluteColors.textSecondary),
             ),
-            const SizedBox(height: 24),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final suggestion in _suggestions)
-                  ActionChip(
-                    avatar: Icon(suggestion.icon, size: 16, color: FluteColors.muted),
-                    label: Text(suggestion.text, style: const TextStyle(fontSize: 13.5)),
-                    backgroundColor: FluteColors.surface,
-                    side: const BorderSide(color: FluteColors.line),
-                    onPressed: () => onPick(suggestion.text),
-                  ),
-              ],
-            ),
+            const SizedBox(width: FluteSpace.md),
+            Expanded(child: Text(text, style: FluteText.label)),
+            const Icon(Icons.chevron_right, size: 20, color: FluteColors.muted),
           ],
         ),
       ),

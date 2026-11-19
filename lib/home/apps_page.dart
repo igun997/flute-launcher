@@ -60,18 +60,18 @@ class _AppsPageState extends State<AppsPage> {
         builder: (context, _) {
           final searching = _query.text.trim().isNotEmpty;
           final groups = group(flute.repo.apps, flute.modes.ruleFor, _query.text);
-          final emptyText = flute.repo.loading
-              ? 'Loading apps'
+          final (title, caption) = flute.repo.loading
+              ? ('Loading apps', 'Fetching your list.')
               : searching
-                  ? 'No apps match'
-                  : 'No apps found';
+                  ? ('No apps match', 'Try a shorter name.')
+                  : ('No apps found', 'Installed apps show up here.');
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 12, 0),
+                padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.sm, FluteSpace.sm, 0),
                 child: Row(
                   children: [
-                    const Text('Apps', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w300)),
+                    Text('Apps', style: FluteText.title),
                     const Spacer(),
                     TextButton(onPressed: () => openSettings(context, flute), child: const Text('Settings')),
                   ],
@@ -79,7 +79,7 @@ class _AppsPageState extends State<AppsPage> {
               ),
               Expanded(
                 child: groups.isEmpty
-                    ? Center(child: Text(emptyText, style: const TextStyle(color: FluteColors.muted, fontSize: 16)))
+                    ? _EmptyApps(title: title, caption: caption)
                     : NotificationListener<OverscrollNotification>(
                         // Dragging down past the top of the list returns to the home page.
                         onNotification: (n) {
@@ -87,7 +87,7 @@ class _AppsPageState extends State<AppsPage> {
                           return false;
                         },
                         child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+                          padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.xs, FluteSpace.lg, FluteSpace.md),
                           physics: const ClampingScrollPhysics(),
                           itemCount: groups.length,
                           itemBuilder: (context, i) {
@@ -139,17 +139,11 @@ class _AppsPageState extends State<AppsPage> {
                       ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+                padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.xs, FluteSpace.lg, FluteSpace.lg),
                 child: TextField(
                   controller: _query,
                   textInputAction: TextInputAction.search,
-                  decoration: InputDecoration(
-                    hintText: 'Search apps',
-                    filled: true,
-                    fillColor: FluteColors.surface,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
-                  ),
+                  decoration: const InputDecoration(hintText: 'Search apps'),
                   onSubmitted: (_) {
                     if (groups.isNotEmpty) FluteNative.launchApp(groups.first.$2.first.package);
                   },
@@ -158,6 +152,30 @@ class _AppsPageState extends State<AppsPage> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// One display line and one caption, centred where the list would be.
+class _EmptyApps extends StatelessWidget {
+  const _EmptyApps({required this.title, required this.caption});
+  final String title;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: FluteSpace.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title, textAlign: TextAlign.center, style: FluteText.title.copyWith(color: FluteColors.muted)),
+            const SizedBox(height: FluteSpace.xs),
+            Text(caption, textAlign: TextAlign.center, style: FluteText.caption),
+          ],
+        ),
       ),
     );
   }
@@ -187,9 +205,9 @@ class _Header extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.only(top: 12),
+          padding: const EdgeInsets.only(top: FluteSpace.md),
           child: SizedBox(
-            height: 44,
+            height: 48,
             child: Row(
               children: [
                 Expanded(
@@ -197,10 +215,8 @@ class _Header extends StatelessWidget {
                     '${category.label.toUpperCase()}  $count$note',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                    style: FluteText.overline.copyWith(
                       color: rule == Rule.show ? FluteColors.muted : FluteColors.warn,
-                      fontSize: 12,
-                      letterSpacing: 1.2,
                     ),
                   ),
                 ),
@@ -232,16 +248,17 @@ class _AppRow extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       scale: 0.98,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Text(
-          app.label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w300,
-            color: rule == Rule.show ? FluteColors.text : FluteColors.muted,
+      child: SizedBox(
+        height: 56,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            app.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: FluteText.title.copyWith(
+              color: rule == Rule.show ? FluteColors.text : FluteColors.muted,
+            ),
           ),
         ),
       ),
@@ -262,20 +279,20 @@ Future<void> showAppSheet(BuildContext context, Flute flute, FluteApp app) {
         final fixed = ModeEngine.defaultAllowed.contains(app.package);
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+            padding: const EdgeInsets.fromLTRB(FluteSpace.lg, 0, FluteSpace.lg, FluteSpace.lg),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(current.label, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w300)),
-                const SizedBox(height: 4),
-                Text(current.package, style: const TextStyle(color: FluteColors.muted, fontSize: 13)),
-                const SizedBox(height: 18),
-                const Text('CATEGORY', style: TextStyle(color: FluteColors.muted, fontSize: 12, letterSpacing: 1.2)),
-                const SizedBox(height: 8),
+                Text(current.label, style: FluteText.title),
+                const SizedBox(height: FluteSpace.xs),
+                Text(current.package, style: FluteText.caption),
+                const SizedBox(height: FluteSpace.lg),
+                Text('CATEGORY', style: FluteText.overline),
+                const SizedBox(height: FluteSpace.sm),
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: FluteSpace.sm,
+                  runSpacing: FluteSpace.sm,
                   children: [
                     for (final c in AppCategory.values)
                       ChoiceChip(
@@ -285,7 +302,7 @@ Future<void> showAppSheet(BuildContext context, Flute flute, FluteApp app) {
                       ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: FluteSpace.sm),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Pin to home'),
@@ -302,7 +319,7 @@ Future<void> showAppSheet(BuildContext context, Flute flute, FluteApp app) {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Always allowed'),
-                  subtitle: const Text('Ignores mode rules', style: TextStyle(fontSize: 13)),
+                  subtitle: const Text('Ignores mode rules'),
                   value: allowed || fixed,
                   onChanged: fixed ? null : (v) => flute.modes.setAllowed(app.package, v),
                 ),

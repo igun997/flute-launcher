@@ -235,7 +235,7 @@ class _ConfirmBodyState extends State<_ConfirmBody> {
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+        padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.xs, FluteSpace.lg, FluteSpace.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
@@ -243,57 +243,49 @@ class _ConfirmBodyState extends State<_ConfirmBody> {
             Row(
               children: [
                 Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: FluteColors.accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(toolSourceIcon(tool.source), color: FluteColors.accent, size: 19),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(color: FluteColors.surfaceTop, borderRadius: FluteRadius.mdAll),
+                  child: Icon(toolSourceIcon(tool.source), color: FluteColors.textSecondary, size: 20),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: FluteSpace.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Allow this change?', style: TextStyle(color: FluteColors.muted, fontSize: 12)),
+                      Text(tool.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: FluteText.label),
                       Text(
-                        '${toolSourceLabel(tool.source)} · ${tool.name}',
+                        toolSourceLabel(tool.source),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                        style: FluteText.caption,
                       ),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              view.headline,
-              maxLines: 6,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 17, height: 1.35),
-            ),
+            const SizedBox(height: FluteSpace.lg),
+            Text(view.headline, maxLines: 6, overflow: TextOverflow.ellipsis, style: FluteText.title),
             if (body != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: FluteSpace.md),
               _CodeBlock(text: body),
             ],
             if (view.details.isNotEmpty) _details(context, view.details),
-            const SizedBox(height: 20),
+            const SizedBox(height: FluteSpace.xl),
             FilledButton(
               onPressed: () => _decide(ConfirmDecision.allowOnce),
               child: const Text('Allow once'),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: FluteSpace.sm),
             OutlinedButton(
               onPressed: () => _decide(ConfirmDecision.allowForSession),
               child: const Text('Allow for this chat'),
             ),
-            const SizedBox(height: 4),
             TextButton(
               onPressed: () => _decide(ConfirmDecision.deny),
-              child: const Text('Deny', style: TextStyle(color: FluteColors.muted)),
+              style: TextButton.styleFrom(foregroundColor: FluteColors.textSecondary),
+              child: const Text('Deny'),
             ),
           ],
         ),
@@ -309,7 +301,7 @@ class _ConfirmBodyState extends State<_ConfirmBody> {
           button: true,
           expanded: _detailsOpen,
           child: InkWell(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: FluteRadius.smAll,
             onTap: () => setState(() => _detailsOpen = !_detailsOpen),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -396,7 +388,7 @@ class _CodeBlock extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: FluteColors.surfaceHigh,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: FluteRadius.mdAll,
         border: Border.all(color: FluteColors.line),
       ),
       child: SingleChildScrollView(

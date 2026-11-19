@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../app/flute.dart';
+import '../app/theme.dart';
+import '../core/day_style.dart';
 import '../email/email_models.dart';
 import '../email/email_widgets.dart';
 import '../native/flute_native.dart';
@@ -97,11 +99,11 @@ String ago(DateTime t, {DateTime? now}) {
   return '${d.inDays}d';
 }
 
-/// Empty copy for each filter: nothing at all, no chats, or no mail.
-String _emptyText(InboxFilter filter) => switch (filter) {
-      InboxFilter.all => 'Nothing new',
-      InboxFilter.chat => 'No messages yet',
-      InboxFilter.mail => 'No mail yet',
+/// Empty copy for each filter: a display line and a caption. Nothing at all, no chats, or no mail.
+(String, String) _emptyText(InboxFilter filter) => switch (filter) {
+      InboxFilter.all => ('Nothing new', 'Chats and mail land here.'),
+      InboxFilter.chat => ('No messages yet', 'WhatsApp and SMS show up here.'),
+      InboxFilter.mail => ('No mail yet', 'Connect a mailbox to see it here.'),
     };
 
 /// Everything that arrived, in one place: WhatsApp and SMS from notifications and every
@@ -162,14 +164,15 @@ class _InboxPageState extends State<InboxPage> {
               filter: _filter,
             );
             final warnAccess = !flute.notificationAccess.value && _filter != InboxFilter.mail;
+            final ink = SkyInk.of(context);
             return Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+              padding: const EdgeInsets.fromLTRB(FluteSpace.lg, FluteSpace.lg, FluteSpace.lg, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Text('Inbox', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w300)),
+                      Text('Inbox', style: FluteText.display),
                       const Spacer(),
                       TextButton(
                         onPressed: () => showModalBottomSheet<void>(
@@ -181,9 +184,9 @@ class _InboxPageState extends State<InboxPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: FluteSpace.xs),
                   Wrap(
-                    spacing: 8,
+                    spacing: FluteSpace.sm,
                     children: [
                       for (final f in InboxFilter.values)
                         ChoiceChip(label: Text(f.label), selected: _filter == f, onSelected: (_) => setState(() => _filter = f)),
@@ -197,10 +200,10 @@ class _InboxPageState extends State<InboxPage> {
                         ? InkWell(
                             onTap: FluteNative.openNotificationAccessSettings,
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+                              padding: const EdgeInsets.fromLTRB(0, FluteSpace.md, 0, FluteSpace.xs),
                               child: Text(
                                 'Allow notification access to see WhatsApp and SMS here.',
-                                style: TextStyle(color: SkyInk.of(context).warn, fontSize: 14),
+                                style: FluteText.label.copyWith(fontWeight: FontWeight.w400, color: ink.warn),
                               ),
                             ),
                           )
@@ -212,13 +215,11 @@ class _InboxPageState extends State<InboxPage> {
                       child: KeyedSubtree(
                         key: ValueKey('${_filter.name}-${items.isEmpty}'),
                         child: items.isEmpty
-                            ? Center(
-                                child: Text(_emptyText(_filter), style: TextStyle(color: SkyInk.of(context).inkSoft, fontSize: 15)),
-                              )
+                            ? _EmptyInbox(filter: _filter, ink: ink)
                             : RefreshIndicator(
                                 onRefresh: _refresh,
                                 child: ListView.builder(
-                                  padding: const EdgeInsets.only(bottom: 24),
+                                  padding: const EdgeInsets.only(bottom: FluteSpace.xl),
                                   itemCount: items.length,
                                   itemBuilder: (context, i) => _Row(item: items[i], onTap: () => _open(items[i])),
                                 ),
@@ -230,6 +231,31 @@ class _InboxPageState extends State<InboxPage> {
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// One display line and one caption, centred where the list would be.
+class _EmptyInbox extends StatelessWidget {
+  const _EmptyInbox({required this.filter, required this.ink});
+  final InboxFilter filter;
+  final DayStyle ink;
+
+  @override
+  Widget build(BuildContext context) {
+    final (title, caption) = _emptyText(filter);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: FluteSpace.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title, textAlign: TextAlign.center, style: FluteText.title.copyWith(color: ink.ink)),
+            const SizedBox(height: FluteSpace.xs),
+            Text(caption, textAlign: TextAlign.center, style: FluteText.caption.copyWith(color: ink.inkSoft)),
+          ],
         ),
       ),
     );
@@ -249,46 +275,54 @@ class _Row extends StatelessWidget {
       excludeSemantics: true,
       label: '${item.source}, ${item.title}, ${item.subtitle}, ${ago(item.time)}',
       child: PressScale(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: FluteRadius.mdAll,
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: FluteSpace.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: FluteText.heading.copyWith(
+                          fontWeight: item.unread ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                      const SizedBox(height: FluteSpace.xs / 2),
+                      Text(
+                        item.subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: FluteText.label.copyWith(fontWeight: FontWeight.w400, color: ink.inkSoft),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: FluteSpace.md),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    Text(ago(item.time), style: FluteText.caption.copyWith(color: ink.inkSoft)),
+                    const SizedBox(height: FluteSpace.xs / 2),
                     Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 16, fontWeight: item.unread ? FontWeight.w600 : FontWeight.w400),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: ink.inkSoft, fontSize: 14),
+                      item.source,
+                      style: FluteText.caption.copyWith(
+                        color: item.isMail ? ink.warn : ink.accent,
+                        letterSpacing: 0.4,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(ago(item.time), style: TextStyle(color: ink.inkSoft, fontSize: 13)),
-                  const SizedBox(height: 2),
-                  Text(
-                    item.source,
-                    style: TextStyle(color: item.isMail ? ink.warn : ink.accent, fontSize: 12, letterSpacing: 0.4),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
