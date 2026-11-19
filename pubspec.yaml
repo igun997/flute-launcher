@@ -27,6 +27,12 @@ dependencies:
   yaml: ^3.1.4
   uuid: ^4.6.0
   shared_preferences: ^2.5.6
+# jni 1.2.0 / jni_flutter 1.1.0 fail at startup on the phone with
+# ClassNotFoundException "Landroid/content/Context;" (path_provider and shared_preferences use them).
+dependency_overrides:
+  jni: 1.1.2
+  jni_flutter: 1.0.4+1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
