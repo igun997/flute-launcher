@@ -83,9 +83,16 @@ class ImageGenerateTool extends BuiltinTool {
   String get name => 'image_generate';
 
   @override
-  String get description =>
-      'Create a picture from a text description and show it in the chat. Describe subject, style, '
-      'lighting and composition in the prompt. Takes 10 to 60 seconds. One picture per call.';
+  String get description {
+    final available = _availableModels();
+    return 'Create a picture from a text description and show it in the chat. Describe subject, style, '
+        'lighting and composition in the prompt. Takes 10 to 60 seconds. One picture per call. '
+        'You choose the image model with `model` (and `provider` when several providers have it). '
+        'ALWAYS set `model` when the user names a model or a vendor (Gemini, GPT Image, DALL-E, Flux...); '
+        'otherwise pick the one that fits the request (photographic realism, illustration, text in the image). '
+        'Leave `model` out only to use the default. '
+        '${available.isEmpty ? 'No image models are known yet.' : 'Available image models: $available.'}';
+  }
 
   @override
   Map<String, dynamic> get parameters => objectSchema(
@@ -96,9 +103,25 @@ class ImageGenerateTool extends BuiltinTool {
             'enum': _sizes.keys.toList(),
             'description': 'square (default), portrait or landscape.',
           },
+          'model': stringProp('Image model id, or a short name such as gemini, from the available list.'),
+          'provider': stringProp('Provider name from the available list. Optional.'),
         },
         required: const ['prompt'],
       );
+
+  /// "Gateway: a, b; Netra: c" from the model lists already loaded, for the tool description.
+  String _availableModels() {
+    final parts = <String>[];
+    var shown = 0;
+    for (final profile in _searchOrder()) {
+      final catalog = ModelCatalog.loadCache(_prefs, profile.id) ?? const <ModelInfo>[];
+      final models = ImageModels.candidates(catalog).take(8).toList();
+      if (models.isEmpty || shown >= 16) continue;
+      shown += models.length;
+      parts.add('${profile.label}: ${models.join(', ')}');
+    }
+    return parts.join('; ');
+  }
 
   // It spends the provider's credits, so it asks first.
   @override
@@ -125,41 +148,97 @@ class ImageGenerateTool extends BuiltinTool {
     }
     final size = _sizes[argString(args, 'shape')] ?? _sizes['square']!;
 
-    final profile = _providers.active;
-    if (profile == null || profile.kind != ProviderKind.openaiCompatible) {
+    final profiles = _searchOrder();
+    if (profiles.isEmpty) {
       return const ToolResult.error(
-        'Image generation needs an OpenAI-compatible provider such as a gateway or an OpenAI key. Set one up in Agent settings.',
+        'Image generation needs an OpenAI-compatible provider such as a gateway or an OpenAI key. Add one in Agent settings.',
       );
     }
-    final catalog = ModelCatalog.loadCache(_prefs, profile.id) ?? const <ModelInfo>[];
-    final models = ImageModels.candidates(catalog, preferred: _settings.model);
-    if (models.isEmpty) {
+    final catalogs = <String, List<ModelInfo>>{};
+    for (final profile in profiles) {
+      catalogs[profile.id] = await _catalogOf(profile);
+    }
+    final labels = {for (final p in profiles) p.id: p.label};
+    final asked = argString(args, 'model');
+    ImageTarget? byAssistant;
+    if (asked != null && asked.trim().isNotEmpty) {
+      byAssistant = ImageModels.find(catalogs, labels, asked, provider: argString(args, 'provider'));
+      if (byAssistant == null) {
+        final available = _availableModels();
+        return ToolResult.error(
+          'No connected provider offers an image model called "$asked". '
+          '${available.isEmpty ? '' : 'Available: $available. '}Choose one of those or leave model out.',
+        );
+      }
+    }
+    final chosenModel = _settings.model;
+    final chosenProfile = _settings.profileId ?? _providers.active?.id;
+    final byUser = chosenModel != null && chosenProfile != null && catalogs.containsKey(chosenProfile)
+        ? ImageTarget(chosenProfile, chosenModel)
+        : null;
+    final targets = ImageModels.plan(catalogs, first: [?byAssistant, ?byUser]);
+    if (targets.isEmpty) {
       return const ToolResult.error(
-        'No image model was found on this provider. Pick a model in Agent settings once the model list has loaded.',
+        'No image model was found on your providers. Pick one in Agent settings once a model list has loaded.',
       );
     }
 
-    final token = await _providers.tokenFor(profile.id);
-    final host = hostOf(profile.baseUrl);
-    final uri = Uri.parse('${normaliseBaseUrl(profile.baseUrl)}/images/generations');
+    final byId = {for (final p in profiles) p.id: p};
     LlmException? last;
-    for (final model in models.take(ImageModels.maxAttempts)) {
+    for (final target in targets.take(ImageModels.maxAttempts)) {
+      final profile = byId[target.profileId];
+      if (profile == null) continue;
+      final host = hostOf(profile.baseUrl);
       try {
-        final bytes = await _request(uri, token, host, model, prompt, size);
+        final token = await _providers.tokenFor(profile.id);
+        final uri = Uri.parse('${normaliseBaseUrl(profile.baseUrl)}/images/generations');
+        final bytes = await _request(uri, token, host, target.model, prompt, size);
         final path = await _save(bytes);
         return ToolResult(
-          'Created the picture with $model ($size). It is now shown to the user in the chat. '
+          'Created the picture with ${target.model} on ${profile.label} ($size). It is now shown to the user in the chat. '
           'You cannot see it; do not describe details you cannot know.',
           images: [path],
         );
       } on LlmException catch (e) {
         last = e;
       } catch (e) {
-        if (isNetworkError(e)) return ToolResult.error(unreachable(host).message);
-        rethrow;
+        if (!isNetworkError(e)) rethrow;
+        last = unreachable(host);
       }
     }
     return ToolResult.error(last?.message ?? 'Image generation failed.');
+  }
+
+  /// OpenAI-compatible profiles, the active one first. Other kinds have no images endpoint.
+  List<ProviderProfile> _searchOrder() {
+    final all = [
+      for (final p in _providers.profiles)
+        if (p.kind == ProviderKind.openaiCompatible) p,
+    ];
+    final activeId = _providers.active?.id;
+    return [
+      ...all.where((p) => p.id == activeId),
+      ...all.where((p) => p.id != activeId),
+    ];
+  }
+
+  /// The model list of [profile]: the cached one, or one fetch when it was never loaded.
+  Future<List<ModelInfo>> _catalogOf(ProviderProfile profile) async {
+    final cached = ModelCatalog.loadCache(_prefs, profile.id);
+    if (cached != null) return cached;
+    try {
+      final models = await ModelCatalog.fetch(
+        kind: profile.kind,
+        baseUrl: profile.baseUrl,
+        token: await _providers.tokenFor(profile.id),
+        httpClient: _client,
+      );
+      await ModelCatalog.saveCache(_prefs, profile.id, models);
+      return models;
+    } catch (_) {
+      // An unreachable provider just contributes no models; the others are still tried.
+      return const <ModelInfo>[];
+    }
   }
 
   Future<Uint8List> _request(

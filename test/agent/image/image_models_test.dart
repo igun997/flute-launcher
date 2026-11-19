@@ -61,4 +61,38 @@ void main() {
     );
     expect({for (final m in models) m.id: m.generatesImages}, {'a': true, 'b': true, 'c': null});
   });
+
+  test('plan keeps the chosen target first and searches providers in the given order', () {
+    final plan = ImageModels.plan(
+      {
+        'a': [_m('gpt-4o')],
+        'b': [_m('dall-e-3'), _m('gpt-image-1')],
+        'c': [_m('flux-dev')],
+      },
+      first: const [ImageTarget('c', 'flux-dev')],
+    );
+    expect(plan, const [
+      ImageTarget('c', 'flux-dev'),
+      ImageTarget('b', 'gpt-image-1'),
+      ImageTarget('b', 'dall-e-3'),
+    ]);
+  });
+
+  test('a model the assistant names is found by id on the right provider, any case', () {
+    final catalogs = {
+      'a': [_m('gpt-4o')],
+      'b': [_m('dall-e-3')],
+      'c': [_m('cx/gpt-6-luna')],
+    };
+    const labels = {'a': 'Netra', 'b': 'OpenAI', 'c': 'Gateway'};
+    expect(ImageModels.find(catalogs, labels, 'DALL-E-3'), const ImageTarget('b', 'dall-e-3'));
+    // Not listed by the gateway, but a known image model of a gateway that lists cx/ models.
+    expect(ImageModels.find(catalogs, labels, 'cx/gpt-image-2', provider: 'gateway'),
+        const ImageTarget('c', 'cx/gpt-image-2'));
+    expect(ImageModels.find(catalogs, labels, 'dall-e-3', provider: 'Netra'), isNull);
+    expect(ImageModels.find(catalogs, labels, 'nonexistent'), isNull);
+    // A loose name picks the first matching image model.
+    expect(ImageModels.find(catalogs, labels, 'gpt image'), const ImageTarget('c', 'cx/gpt-image-2'));
+    expect(ImageModels.find(catalogs, labels, 'dall e'), const ImageTarget('b', 'dall-e-3'));
+  });
 }
