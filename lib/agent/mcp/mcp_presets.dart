@@ -49,7 +49,7 @@ class McpPresets {
   static const jira = McpPreset(
     key: 'jira',
     title: 'Jira and Confluence',
-    description: 'Issues, projects and pages in Atlassian Cloud. Needs an API token.',
+    description: 'Issues, projects and pages in Atlassian Cloud. Sign in with your Atlassian account.',
     url: 'https://mcp.atlassian.com/v2/mcp',
     auth: McpAuthKind.oauth,
     tokenAuth: McpAuthKind.basic,
@@ -57,7 +57,21 @@ class McpPresets {
     helpUrl: 'https://id.atlassian.com/manage-profile/security/api-tokens',
   );
 
-  static const List<McpPreset> all = [github, jira];
+  /// A cloud Linux desktop for the agent (Chrome, a shell, the screen). Streamable HTTP with OAuth:
+  /// the server answers 401 with `resource_metadata` and `scope="boxes connect"`, and registers
+  /// clients dynamically. A personal key from the access page works as a bearer token.
+  static const simularBox = McpPreset(
+    key: 'simular-box',
+    title: 'Simular Box',
+    description: 'A cloud computer for the agent: browser, shell and screen. Sign in with your Simular account.',
+    url: 'https://mcp.box.simular.ai/mcp',
+    auth: McpAuthKind.oauth,
+    tokenAuth: McpAuthKind.bearer,
+    secretLabel: 'Personal key',
+    helpUrl: 'https://box.simular.ai/access',
+  );
+
+  static const List<McpPreset> all = [github, jira, simularBox];
 
   /// The value stored as the secret of a [jira] server: base64 of `email:apiToken`,
   /// sent as `Authorization: Basic <value>`.

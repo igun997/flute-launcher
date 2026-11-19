@@ -147,6 +147,42 @@ void main() {
   });
 
   group('discovery', () {
+    test('Simular Box: path-suffixed resource metadata, scope from the challenge, dynamic registration', () async {
+      const mcp = 'https://mcp.box.simular.ai/mcp';
+      const meta = 'https://mcp.box.simular.ai/.well-known/oauth-protected-resource/mcp';
+      final oauth = _oauth(_http({
+        // The bare well-known path answers 404 on this server; only the path-suffixed one works.
+        meta: (_) => jsonReply({
+              'authorization_servers': ['https://mcp.box.simular.ai'],
+              'bearer_methods_supported': ['header'],
+              'resource': mcp,
+              'resource_name': 'box',
+              'scopes_supported': ['boxes', 'connect'],
+            }),
+        'https://mcp.box.simular.ai/.well-known/oauth-authorization-server': (_) => jsonReply({
+              'issuer': 'https://mcp.box.simular.ai',
+              'authorization_endpoint': 'https://mcp.box.simular.ai/cb/oauth/authorize',
+              'token_endpoint': 'https://mcp.box.simular.ai/oauth/token',
+              'registration_endpoint': 'https://mcp.box.simular.ai/oauth/register',
+              'revocation_endpoint': 'https://mcp.box.simular.ai/oauth/revoke',
+              'code_challenge_methods_supported': ['S256'],
+              'token_endpoint_auth_methods_supported': ['none', 'private_key_jwt'],
+              'scopes_supported': ['boxes', 'connect', 'openid', 'email'],
+            }),
+      }));
+
+      final discovery = await oauth.discover(
+        Uri.parse(mcp),
+        challenge: 'Bearer resource_metadata="$meta", scope="boxes connect"',
+      );
+
+      expect(discovery.resource, mcp);
+      expect(discovery.scope, 'boxes connect');
+      expect(discovery.server.authorizationEndpoint.path, '/cb/oauth/authorize');
+      expect(discovery.server.tokenEndpoint.path, '/oauth/token');
+      expect(discovery.server.registrationEndpoint, Uri.parse('https://mcp.box.simular.ai/oauth/register'));
+    });
+
     test('reads the challenge and the metadata it points to', () async {
       final oauth = _oauth(_http(_discoveryRoutes()));
 
