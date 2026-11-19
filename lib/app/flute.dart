@@ -17,7 +17,9 @@ import '../agent/sandbox/sandbox_manager.dart';
 import '../agent/sandbox/sandbox_tools.dart';
 import '../agent/tools/agent_tool.dart';
 import '../agent/tools/builtin_tools.dart';
+import '../agent/image/image_settings.dart';
 import '../agent/tools/audio_tools.dart';
+import '../agent/tools/image_tools.dart';
 import '../agent/ui/confirm_controller.dart';
 import '../agent/voice/voice_confirmer.dart';
 import '../agent/voice/voice_controller.dart';
@@ -51,6 +53,7 @@ class Flute {
     required this.lockSettings,
     required this.pets,
     required this.web,
+    required this.imageSettings,
     required this.routines,
     required this.voice,
     required this.sandbox,
@@ -63,6 +66,7 @@ class Flute {
       SkillTools(skills),
       WebTools(web),
       AudioTools(providers: providers, prefs: prefs),
+      ImageTools(providers: providers, prefs: prefs, settings: imageSettings),
       SandboxTools(sandbox),
     ];
     routineRunner = RoutineRunner(
@@ -100,6 +104,7 @@ class Flute {
   final SkillManager skills;
   final BuiltinTools builtins;
   final WebSettings web;
+  final ImageSettings imageSettings;
   final RoutineStore routines;
   final VoiceController voice;
   final SandboxManager sandbox;
@@ -174,6 +179,7 @@ class Flute {
       lockSettings: lockSettings,
       pets: pets,
       web: web,
+      imageSettings: ImageSettings(prefs),
       routines: routines,
       voice: VoiceController(engine: NativeVoiceEngine(), prefs: prefs),
       sandbox: SandboxManager(prefs: prefs, secrets: SecureSecretStore()),
@@ -277,6 +283,7 @@ class Flute {
     unawaited(sandbox.shutdown());
     sandbox.dispose();
     web.dispose();
+    imageSettings.dispose();
     confirm.dispose();
     mcp.dispose();
     providers.dispose();

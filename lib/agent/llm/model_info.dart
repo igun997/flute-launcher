@@ -6,6 +6,7 @@ class ModelInfo {
     this.ownedBy,
     this.contextLength,
     this.acceptsImages,
+    this.generatesImages,
     this.promptPricePerMillion,
   });
 
@@ -19,6 +20,9 @@ class ModelInfo {
 
   /// Null when the provider does not say.
   final bool? acceptsImages;
+
+  /// True when the provider says the model can draw pictures. Null when it does not say.
+  final bool? generatesImages;
   final double? promptPricePerMillion;
 
   Map<String, dynamic> toJson() => {
@@ -27,6 +31,7 @@ class ModelInfo {
         if (ownedBy != null) 'ownedBy': ownedBy,
         if (contextLength != null) 'contextLength': contextLength,
         if (acceptsImages != null) 'acceptsImages': acceptsImages,
+        if (generatesImages != null) 'generatesImages': generatesImages,
         if (promptPricePerMillion != null) 'promptPricePerMillion': promptPricePerMillion,
       };
 
@@ -36,6 +41,7 @@ class ModelInfo {
         ownedBy: j['ownedBy'] as String?,
         contextLength: (j['contextLength'] as num?)?.toInt(),
         acceptsImages: j['acceptsImages'] as bool?,
+        generatesImages: j['generatesImages'] as bool?,
         promptPricePerMillion: (j['promptPricePerMillion'] as num?)?.toDouble(),
       );
 }

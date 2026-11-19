@@ -12,6 +12,7 @@ import 'sandbox_settings_section.dart';
 import 'routines_section.dart';
 import 'web_settings_section.dart';
 import 'mcp_settings.dart';
+import 'image_settings_section.dart';
 import 'model_picker.dart';
 import 'settings_widgets.dart';
 import 'skills_settings.dart';
@@ -56,6 +57,9 @@ class _AgentSettingsPageState extends State<AgentSettingsPage> {
           const SizedBox(height: 20),
           const SettingsLabel('VOICE'),
           VoiceSettingsSection(voice: flute.voice),
+          const SizedBox(height: 20),
+          const SettingsLabel('IMAGES'),
+          ImageSettingsSection(flute: flute),
           const SizedBox(height: 20),
           const SettingsLabel('SANDBOX'),
           SandboxSettingsSection(manager: flute.sandbox),

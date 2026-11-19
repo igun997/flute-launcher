@@ -76,8 +76,18 @@ class AssistantItem extends ChatItem {
 }
 
 class ToolItem extends ChatItem {
-  ToolItem({required String id, required this.toolName, required this.source, required this.summary}) : super(id);
+  ToolItem({
+    required String id,
+    required this.toolName,
+    required this.source,
+    required this.summary,
+    this.makesImages = false,
+  }) : super(id);
   final String toolName;
+  final bool makesImages;
+
+  /// Picture files the tool produced.
+  List<String> images = const [];
   final String source;
   final String summary;
   ToolState state = ToolState.waiting;
@@ -394,7 +404,13 @@ class AgentRuntime extends ChangeNotifier {
       return ChatMessage.toolResult(call.id, 'Unknown tool "${call.name}".', error: true);
     }
 
-    final item = ToolItem(id: _id(), toolName: tool.name, source: tool.source, summary: tool.describeCall(call.arguments));
+    final item = ToolItem(
+      id: _id(),
+      toolName: tool.name,
+      source: tool.source,
+      summary: tool.describeCall(call.arguments),
+      makesImages: tool.makesImages,
+    );
     _items.add(item);
     notifyListeners();
 
@@ -422,6 +438,7 @@ class AgentRuntime extends ChangeNotifier {
       result = ToolResult.error('The tool failed (${e.runtimeType}).');
     }
     item.state = result.isError ? ToolState.failed : ToolState.done;
+    item.images = result.images;
     item.output = result.text.length > 4000 ? '${result.text.substring(0, 4000)}...' : result.text;
     notifyListeners();
     final forModel = result.text.length > 12000 ? '${result.text.substring(0, 12000)}...(truncated)' : result.text;

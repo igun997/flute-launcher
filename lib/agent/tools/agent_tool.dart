@@ -4,12 +4,17 @@ import '../llm/llm_types.dart';
 enum ToolRisk { read, write }
 
 class ToolResult {
-  const ToolResult(this.text, {this.isError = false});
-  const ToolResult.error(this.text) : isError = true;
+  const ToolResult(this.text, {this.isError = false, this.images = const []});
+  const ToolResult.error(this.text)
+      : isError = true,
+        images = const [];
 
   /// What the model reads back. Keep it compact: it costs tokens.
   final String text;
   final bool isError;
+
+  /// Files the chat shows under the tool call. The model never receives them.
+  final List<String> images;
 }
 
 /// One thing the agent can do: a built-in (calendar, contacts, notes) or an MCP tool.
@@ -22,6 +27,9 @@ abstract class AgentTool {
   Map<String, dynamic> get parameters;
 
   ToolRisk get risk;
+
+  /// True for tools that draw pictures: the chat shows a working animation while they run.
+  bool get makesImages => false;
 
   /// Where it comes from, for grouping in settings and the confirm sheet: `calendar`, `contacts`,
   /// `notes`, or `mcp:<server name>`.

@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 
 import '../../app/theme.dart';
 import '../runtime/agent_runtime.dart';
+import 'image_canvas.dart';
 
 /// Chat rows: user bubbles, Markdown replies, reasoning, tool cards and small pieces shared with
 /// the composer.
@@ -35,6 +36,7 @@ IconData toolSourceIcon(String source) {
     'time' => Icons.schedule,
     'skills' => Icons.auto_awesome_outlined,
     'web' => Icons.public,
+    'image' => Icons.image_outlined,
     _ => Icons.build_outlined,
   };
 }
@@ -48,6 +50,7 @@ String toolSourceLabel(String source) {
     'time' => 'Time',
     'skills' => 'Skill',
     'web' => 'Web',
+    'image' => 'Image',
     _ => source,
   };
 }
@@ -416,6 +419,13 @@ class _ToolCardState extends State<ToolCard> {
                   _StateChip(state: item.state),
                 ],
               ),
+              if (item.makesImages)
+                AnimatedSize(
+                  duration: motion(context, 260),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: ToolImages(item: item),
+                ),
               AnimatedSize(
                 duration: motion(context, 180),
                 curve: Curves.easeOut,

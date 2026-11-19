@@ -151,6 +151,7 @@ class ModelCatalog {
       ownedBy: textOf(item['owned_by']),
       contextLength: context != null && context > 0 ? context : null,
       acceptsImages: _acceptsImages(architecture, item),
+      generatesImages: _generatesImages(architecture, item),
       // Negative prices mean "varies" on OpenRouter; they are not a price.
       promptPricePerMillion:
           promptPerToken != null && promptPerToken >= 0 ? promptPerToken * 1e6 : null,
@@ -163,6 +164,16 @@ class ModelCatalog {
     // OpenRouter also describes it as "text+image->text".
     final modality = textOf(architecture['modality']);
     if (modality != null) return modality.split('->').first.contains('image');
+    return null;
+  }
+
+  static bool? _generatesImages(Map<dynamic, dynamic> architecture, Map<dynamic, dynamic> item) {
+    final capabilities = item['capabilities'];
+    if (capabilities is Map && capabilities['imageOutput'] is bool) {
+      return capabilities['imageOutput'] as bool;
+    }
+    final outputs = architecture['output_modalities'] ?? item['output_modalities'];
+    if (outputs is List) return outputs.contains('image');
     return null;
   }
 
