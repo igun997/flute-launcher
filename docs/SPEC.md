@@ -1,6 +1,6 @@
-# Flute Launcher: v1 spec
+# Flute: v1 spec
 
-Android focus launcher (Flutter UI + Kotlin native). English only. Reference: minimalist phone; extension: understands apps by category.
+Flute, a lightweight Android launcher that boosts productivity, not only focus (Flutter UI + Kotlin native). English only. Reference: minimalist phone; extension: understands apps by category.
 Package/app id `id.nst.focus_launcher`, Dart package `focus_launcher`, label "Flute". Flutter 3.50 (import `package:material_ui/material_ui.dart`).
 
 ## Product

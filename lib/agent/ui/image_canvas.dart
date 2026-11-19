@@ -297,36 +297,55 @@ class _FullImage extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: () => Navigator.of(context).pop(),
         child: Stack(
+          fit: StackFit.expand,
           children: [
             Positioned.fill(
-              child: Hero(
-                tag: file.path,
-                child: InteractiveViewer(
-                  maxScale: 5,
-                  child: Image.file(File(file.path), fit: BoxFit.contain, errorBuilder: (_, _, _) => const _MissingImage()),
+              child: LayoutBuilder(
+                builder: (context, box) => Hero(
+                  tag: file.path,
+                  child: InteractiveViewer(
+                    maxScale: 5,
+                    // InteractiveViewer lays its child out loose and pins it to the top-left at natural
+                    // size, so a small picture (a 400 px chart) is given the viewport explicitly and
+                    // centred inside it.
+                    child: SizedBox(
+                      width: box.maxWidth,
+                      height: box.maxHeight,
+                      child: Image.file(
+                        File(file.path),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const _MissingImage(),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-            SafeArea(
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: 'Close',
-                    icon: const Icon(Icons.close, color: FluteColors.text),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: 'Save to Downloads',
-                    icon: const Icon(Icons.download_outlined, color: FluteColors.text),
-                    onPressed: () => unawaited(saveToolFile(ScaffoldMessenger.of(context), file)),
-                  ),
-                  IconButton(
-                    tooltip: 'Share',
-                    icon: const Icon(Icons.share_outlined, color: FluteColors.text),
-                    onPressed: () => unawaited(shareToolFile(ScaffoldMessenger.of(context), file)),
-                  ),
-                ],
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Close',
+                      icon: const Icon(Icons.close, color: FluteColors.text),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: 'Save to Downloads',
+                      icon: const Icon(Icons.download_outlined, color: FluteColors.text),
+                      onPressed: () => unawaited(saveToolFile(ScaffoldMessenger.of(context), file)),
+                    ),
+                    IconButton(
+                      tooltip: 'Share',
+                      icon: const Icon(Icons.share_outlined, color: FluteColors.text),
+                      onPressed: () => unawaited(shareToolFile(ScaffoldMessenger.of(context), file)),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

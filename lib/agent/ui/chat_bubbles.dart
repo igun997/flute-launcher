@@ -176,6 +176,13 @@ Future<void> _openLink(String url) async {
 }
 
 /// Markdown as the model wrote it: code blocks with a copy button, tables, links, LaTeX.
+/// Some models wrap citations in private-use marker characters (`U+E200 cite ... U+E201`). The chat
+/// has no use for them and fonts draw them as stray symbols, so they are removed, including a
+/// marker that is still arriving (no closing character yet).
+String stripModelMarkers(String text) => text
+    .replaceAll(RegExp('\uE200[^\uE201]*(\uE201|\$)'), '')
+    .replaceAll(RegExp('[\uE000-\uF8FF]'), '');
+
 class ChatMarkdown extends StatelessWidget {
   const ChatMarkdown(this.text, {super.key, this.muted = false});
 
@@ -185,7 +192,7 @@ class ChatMarkdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GptMarkdown(
-      text,
+      stripModelMarkers(text),
       style: muted
           ? FluteText.caption.copyWith(fontSize: 13.5, height: 1.45)
           : FluteText.body.copyWith(fontSize: 16, height: 1.5, color: FluteColors.text),

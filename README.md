@@ -1,6 +1,14 @@
 # Flute
 
-A calm, text-first Android home screen that **understands your apps**. Flute sorts what you have installed into categories (Banking, Work, Chat, Social, Media, Games, Shopping, Travel, Tools), lets you switch between **modes** that decide what is shown or paused, and puts a small animated companion on the home screen that follows the weather and your bedtime.
+**Not only focus. Boost your productivity, in a lightweight launcher.**
+
+Flute is a calm, text-first Android home screen that **understands your apps** and then helps you get things done. It keeps the phone light (one screen, no feeds, no widgets, no ads), switches **modes** that decide what is shown or paused, and adds an assistant, **Ask Flute**, that can plan your day, search the web, draw, run Python and use your tools. A small animated companion follows the weather and your bedtime.
+
+| | |
+|---|---|
+| **Lightweight** | One quiet screen. GPU-drawn sky capped at 15 to 30 fps, no background polling, Rust only where it measured faster. No account, no ads, no analytics. |
+| **Focus** | Free, Work, Focus and Sleep modes with schedules, a pause gate for distracting apps, Do Not Disturb and screen time by category. |
+| **Boost** | Ask Flute controls the launcher, reads your calendar, makes pictures and charts, fetches the web, runs routines on a schedule and talks back. Connect GitHub, Jira or a cloud desktop (Simular Box) over MCP. |
 
 [![Nightly](https://github.com/igun997/flute-launcher/actions/workflows/nightly.yml/badge.svg)](https://github.com/igun997/flute-launcher/actions/workflows/nightly.yml)
 [![Latest release](https://img.shields.io/github/v/release/igun997/flute-launcher?label=release)](https://github.com/igun997/flute-launcher/releases/latest)
